@@ -96,6 +96,30 @@ test('server validates moves, reconnects seats, and persists ranked results', {t
     assert.equal(ladder.player.rating, first.color==='w'?1220:1180)
     if (!workerUrl) assert.deepEqual(ladder.leaderboard.map(entry=>entry.rating),[1220,1180])
     assert.equal(ladder.player.games,1)
+    const guest=await connect(url)
+    restored.send({type:'create',minutes:6,increment:4,color:'w'})
+    const {code}=await restored.next('joined')
+    await restored.next('state')
+    guest.send({type:'join',code})
+    await guest.next('joined')
+    const firstState=await restored.next('state')
+    assert.equal(firstState.match.increment,4)
+    assert.ok(firstState.matchId)
+    await guest.next('state')
+    const fool=[['f2','f3'],['e7','e5'],['g2','g4'],['d8','h4']]
+    for(const [seq,[from,to]] of fool.entries()) {
+      ;(seq%2 ? guest : restored).send({type:'move',seq,move:{from,to}})
+      const first=await restored.next('state')
+      const second=await guest.next('state')
+      assert.equal(first.matchId,firstState.matchId)
+      assert.equal(first.match.fen,second.match.fen)
+      assert.equal(first.seq,seq+1)
+      if(seq===0)assert.ok(first.match.clocks.w>360000)
+      if(seq===3) {
+        assert.deepEqual(first.match.result,{winner:'b',reason:'Checkmate'})
+        assert.deepEqual(first.match.result,second.match.result)
+      }
+    }
   } finally {
     await stop()
     await rm(folder,{recursive:true,force:true})

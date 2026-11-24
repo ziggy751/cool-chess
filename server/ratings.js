@@ -46,8 +46,10 @@ export class RatingsCore {
     const black = this.get(players.b,division)
     const score = winner === 'w' ? 1 : winner === 'b' ? 0 : .5
     const [w,b] = adjustRatings(white.rating,black.rating,score,white.games,black.games)
+    const changes={}
     for (const [color,newRating,result,side] of [['w',w,score,white],['b',b,1-score,black]]) {
       const prev = side.rating
+      changes[color]={before:prev,rating:newRating,delta:newRating-prev}
       side.games++
       side.rating = newRating
       side.peak = Math.max(side.peak,newRating)
@@ -59,6 +61,7 @@ export class RatingsCore {
     }
     this.changed(players.w)
     this.changed(players.b)
+    return changes
   }
 
   summary(key,division) {

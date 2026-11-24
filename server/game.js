@@ -1,5 +1,5 @@
 import { category } from './ratings.js'
-import { Match, TIMES, opposite } from '../src/rules.js'
+import { Match, validClock, opposite } from '../src/rules.js'
 
 export const send = (socket, message) => {
   if (socket.readyState === 1) socket.send(JSON.stringify(message))
@@ -34,11 +34,11 @@ export function createGames(ratings, id) {
     send(socket, { type: 'joined', code: room.code, color, token: color ? token : null })
   }
 
-  function makeRoom(minutes, preferred) {
+  function makeRoom(minutes, preferred, increment=0) {
     let code
     do { code = id(3).toUpperCase() } while (rooms.has(code))
     const color = ['w', 'b'].includes(preferred) ? preferred : Math.random() < .5 ? 'w' : 'b'
-    const room = { code, minutes, clients: new Set(), seats: {}, match: null,
+    const room = { code, minutes, increment, clients: new Set(), seats: {}, match: null,
       sequence: 0, started: Date.now(), updated: Date.now(), rematch: new Set() }
     rooms.set(code, room)
     changed.add(code)
@@ -48,15 +48,17 @@ export function createGames(ratings, id) {
   function rate(room) {
     if (room.division && room.match?.result && !room.rated) {
       const {winner,reason} = room.match.result
-      ratings.result(room.division,room.players,winner,reason)
+      room.rating=ratings.result(room.division,room.players,winner,reason)
       room.rated = true
     }
   }
 
   function broadcast(room, only) {
     changed.add(room.code)
+    const match=room.match?.snapshot() || null
+    if (match?.result) rate(room)
     const state = { type: 'state', code: room.code, seq: room.sequence,
-      match: room.match?.snapshot() || null, minutes: room.minutes,
+      match, minutes: room.minutes, increment:room.increment || 0, matchId:room.matchId, rating:room.rating,
       online: [...room.clients].filter(client => client.color).map(client => client.color),
       rematch: [...room.rematch], division:room.division || null }
     for (const client of only ? [only] : room.clients) send(client, state)
@@ -79,12 +81,13 @@ export function createGames(ratings, id) {
     if (type === 'leave') return leave(socket)
     if (type === 'create' || type === 'queue') {
       const minutes = message.minutes
-      if (!TIMES.includes(minutes)) throw new Error('Choose a valid time control')
+      const increment = message.increment ?? 0
+      if (!validClock(minutes,increment)) throw new Error('Choose a valid time control')
       const division = message.ranked && type === 'queue' ? category(minutes) : null
-      if (message.ranked && (!division || !socket.profile)) throw new Error('Choose a ranked time control and connect your profile')
+      if (message.ranked && (!division || !socket.profile || increment)) throw new Error('Choose a ranked time control and connect your profile')
       leave(socket)
       if (type === 'queue') {
-        const queueKey = (division || 'casual')+':'+minutes
+        const queueKey = (division || 'casual')+':'+minutes+':'+increment
         const waiting = queue.get(queueKey)
         if (!waiting || waiting.readyState !== 1) {
           queue.set(queueKey, socket)
@@ -92,15 +95,16 @@ export function createGames(ratings, id) {
         }
         if (division && waiting.profile === socket.profile) throw new Error('Already queued on another tab')
         queue.delete(queueKey)
-        const [room, color] = makeRoom(minutes, 'random')
+        const [room, color] = makeRoom(minutes, 'random', increment)
         room.division = division
         if (division) room.players = {[color]:waiting.profile,[opposite(color)]:socket.profile}
         seat(room, waiting, color)
         seat(room, socket, opposite(color))
-        room.match = new Match({ minutes })
+        room.match = new Match({ minutes,increment })
+        room.matchId=id()
         return broadcast(room)
       }
-      const [room, color] = makeRoom(minutes, message.color)
+      const [room, color] = makeRoom(minutes, message.color, increment)
       seat(room, socket, color)
       return broadcast(room)
     }
@@ -111,7 +115,10 @@ export function createGames(ratings, id) {
       const color = existing || (!message.spectate && ['w', 'b'].find(color => !room.seats[color])) || null
       seat(room, socket, color, existing ? message.token : undefined)
       room.updated = Date.now()
-      if (!room.match && room.seats.w && room.seats.b) room.match = new Match({ minutes: room.minutes })
+      if (!room.match && room.seats.w && room.seats.b) {
+        room.match = new Match({minutes:room.minutes,increment:room.increment})
+        room.matchId=id()
+      }
       return broadcast(room)
     }
     const { room, color } = socket
@@ -122,7 +129,9 @@ export function createGames(ratings, id) {
     if (type === 'rematch' && match.result) {
       room.rematch.add(color)
       if (room.rematch.size === 2) {
-        room.match = new Match({ minutes: room.minutes })
+        room.match = new Match({ minutes: room.minutes,increment:room.increment })
+        room.matchId=id()
+        room.rating=null
         room.rematch.clear()
         room.rated = false
         room.sequence++

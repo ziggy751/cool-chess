@@ -16,7 +16,7 @@ const styles = [
 export const opponentAt = level => {
   const style = level===30 ? 9 : (level-1)%styles.length
   const [title,description] = styles[style]
-  return {name:names[level-1],style,title,description}
+  return {name:names[level-1],rating:level===30?'Maximum':level*100,avatar:names[level-1].slice(0,2).toUpperCase(),style,title,description}
 }
 export const bosses = [
   {level:19,environment:'castle',theme:'castle',label:'The Keep'},

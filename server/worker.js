@@ -9,22 +9,12 @@ const hash = token => createHash('sha256').update(token).digest('hex')
 
 function saveRoom(room) {
   const {clients,match,rematch,...fields} = room
-  return {...fields, rematch:[...rematch], match:match && {
-    initial:match.initial, started:match.started, clocks:match.clocks,
-    drawOffer:match.drawOffer, result:match.result,
-    moves:match.chess.history({verbose:true}).map(({from,to,promotion})=>({from,to,promotion})),
-  }}
+  return {...fields,rematch:[...rematch],match:match?.save() || null}
 }
 
 function loadRoom(fields) {
-  const record = fields.match
-  let match = null
-  if (record) {
-    match = new Match({minutes:fields.minutes,fen:record.initial,now:0})
-    for (const move of record.moves) match.move(move,undefined,0)
-    const {started,clocks,drawOffer,result} = record
-    Object.assign(match,{started,clocks,drawOffer,result})
-  }
+  const record=fields.match
+  const match=record ? Match.restore({minutes:fields.minutes,increment:fields.increment,...record}) : null
   return {...fields,match,clients:new Set(),rematch:new Set(fields.rematch)}
 }
 

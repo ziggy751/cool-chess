@@ -20,15 +20,62 @@ const collections = {
 
 export const collectionList = Object.fromEntries(Object.entries(collections).map(([key,[label]])=>[key,label]))
 
-export function profileFor(collection, profile, ring) {
-  const [,foot,[flare,waist,collar],sides] = collections[collection] || collections.staunton
+export function profileFor(collection, profile, ring, base='classic') {
+  const newProfiles = {
+    titanium:['carbon',-.015,36],samurai:['egyptian',.031,32],molten:['stone',.023,18],
+    frost:['crystal',-.035,11],nebula:['glass',.039,56],storm:['obsidian',-.024,16],
+    mechanical:['chrome',.044,40],emerald:['crystal',.035,10],sapphire:['glass',-.02,12],
+    phantom:['ceramic',-.03,50],celestial:['gold',.02,68],living:['marble',.03,64],
+  }
+  const [parent,shift=0,segments] = newProfiles[collection] || [collection]
+  const [,foot,[flare,waist,collar],sides] = collections[parent] || collections.staunton
+  const bases = {
+    bevel:[[.35,.015],[.37,.042],[.37,.079],[.30,.13],[.28,.17]],
+    stepped:[[.37,.015],[.37,.057],[.325,.062],[.325,.115],[.28,.122],[.28,.17]],
+    jewel:[[.27,.01],[.37,.045],[.36,.10],[.28,.16]],
+  }
   const scaled = profile.map(([radius,height]) => {
     if (height > .92 || radius === 0) return [radius,height]
     const offset = height < .30 ? flare : height < .66 ? waist : collar
-    return [radius+offset,height]
+    return [radius+offset+Math.sin(height*7)*shift,height]
   })
   return {
-    points:[[0,0],[ring[1][0],0],...foot,[.27,.175],...scaled],
-    sides,
+    points:[[0,0],[ring[1][0],0],...(bases[base] || foot),[.27,.175],...scaled],
+    sides:base==='jewel'?12:segments || sides,
   }
 }
+
+// The profile, crown treatment and surface are independent so they can also
+// be selected on a single piece in the showroom.
+const editions = {
+  carved: ['Royal Walnut','walnut','ebony','heritage','timber'],
+  marble: ['Italian Marble','marble','obsidian','fluted','stone'],
+  chrome: ['Liquid Chrome','liquid chrome','dark chrome','machined','animated'],
+  obsidian: ['Obsidian','crystal','obsidian','crenel','stone'],
+  gold: ['Royal Gold','gold','dark chrome','filigree','metal'],
+  crystal: ['Diamond Crystal','glass','crystal','facets','glass'],
+  carbon: ['Carbon Edition','ceramic','carbon','machined','metal'],
+  titanium: ['Black Titanium','chrome','titanium','ribs','metal'],
+  ceramic: ['Porcelain','ceramic','ebony','fluted','stone'],
+  roman: ['Ancient Roman','marble','walnut','fluted','stone'],
+  stone: ['Medieval Royalty','stone','obsidian','crenel','stone'],
+  egyptian: ['Egyptian Dynasty','gold','obsidian','obelisk','stone'],
+  samurai: ['Samurai','rose gold','lacquer','helmet','timber'],
+  neon: ['Cyberpunk','holographic','titanium','ribs','animated'],
+  holographic: ['Holographic','holographic','midnight hologram','rings','animated'],
+  molten: ['Molten Core','molten','obsidian','crenel','animated'],
+  frost: ['Frozen Kingdom','frost','sapphire','facets','animated'],
+  nebula: ['Nebula','nebula','obsidian','rings','animated'],
+  storm: ['Storm Edition','storm','titanium','obelisk','animated'],
+  mechanical: ['Mechanical','brass','titanium','gear','animated'],
+  emerald: ['Emerald','emerald','obsidian','facets','glass'],
+  sapphire: ['Sapphire','sapphire','titanium','helmet','glass'],
+  phantom: ['Phantom','phantom','midnight hologram','fluted','animated'],
+  celestial: ['Celestial','celestial','titanium','filigree','animated'],
+  living: ['Living Marble','living marble','obsidian','heritage','animated'],
+}
+export const premiumCollections = Object.fromEntries(Object.entries(editions).map(([key,[label,white,black,detail,category]])=>
+  [key,{label,white,black,detail,category}]))
+Object.assign(collectionList,Object.fromEntries(Object.entries(premiumCollections).map(([key,item])=>[key,item.label])))
+
+export const baseStyles = { classic:'Original', bevel:'Machined bevel', stepped:'Stepped plinth', jewel:'Faceted collar' }

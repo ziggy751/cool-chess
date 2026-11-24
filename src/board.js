@@ -1,9 +1,12 @@
 import * as THREE from 'three'
 import { environments } from './environments.js'
-import { profileFor } from './collections.js'
+import { animateSurface } from './surfaces.js'
+import { profileFor, premiumCollections } from './collections.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
+import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 
 const files = 'abcdefgh'
@@ -21,6 +24,19 @@ const profile = {
 }
 const ring = [[0,0],[.31,0],[.35,.025],[.36,.055],[.355,.09],[.34,.12],[.30,.135],[.29,.16],[.27,.175]]
 const geometryCache = new Map()
+const gearOutline=new THREE.Shape()
+for(let i=0;i<72;i++){
+  const a=i*Math.PI/36
+  const radius=i%4===1 || i%4===2?.245:.211
+  if(i)gearOutline.lineTo(Math.cos(a)*radius,Math.sin(a)*radius)
+  else gearOutline.moveTo(radius,0)
+}
+gearOutline.closePath()
+const gearHub=new THREE.Path()
+gearHub.absarc(0,0,.171,0,2*Math.PI,true)
+gearOutline.holes.push(gearHub)
+const gearGeometry=new THREE.ExtrudeGeometry(gearOutline,{depth:.025,bevelEnabled:true,bevelSize:.006,bevelThickness:.003,bevelSegments:2}).rotateX(-Math.PI/2)
+const engravingBand=new THREE.CylinderGeometry(.345,.345,.04,48,1,true)
 const felt = new THREE.MeshStandardMaterial({color:0x243830,roughness:1})
 const feltGeometry = new THREE.CylinderGeometry(.27,.285,.014,48)
 
@@ -52,12 +68,12 @@ function boardFrame(size, depth, bevel) {
   return geo
 }
 
-function pieceGeometry(type,collection = 'staunton') {
-  const key = collection + ':' + type
+function pieceGeometry(type,collection='staunton',base='classic',quality='high') {
+  const key = collection+':'+type+':'+base+':'+quality
   if (geometryCache.has(key)) return geometryCache.get(key)
-  const shape = profileFor(collection,profile[type],ring)
+  const shape = profileFor(collection,profile[type],ring,base)
   const height = type === 'p' ? .82 : type === 'q' ? 1.08 : 1
-  let body = new THREE.LatheGeometry(turnedProfile(shape.points,height),shape.sides)
+  let body = new THREE.LatheGeometry(turnedProfile(shape.points,height),quality==='low'?Math.min(28,shape.sides):shape.sides)
   if (type === 'b') {
     const cutter = new Brush(new THREE.BoxGeometry(.37,.075,.47))
     cutter.position.set(.163,.986,0)
@@ -68,6 +84,31 @@ function pieceGeometry(type,collection = 'staunton') {
     body = new Evaluator().evaluate(solid,cutter,SUBTRACTION).geometry
   }
   const list = [[body]]
+  const detail = premiumCollections[collection]?.detail
+  const collar = (radius,y,tube=.012,shade=.73) => {
+    const geometry = new THREE.TorusGeometry(radius,tube,8,48).rotateX(Math.PI/2)
+    list.push([geometry,0,y,0,0,shade])
+  }
+  collar(type==='p'?.258:.313,.099,.009)
+  if (detail==='machined' || detail==='ribs' || detail==='gear') {
+    for (const y of [.037,.065,.127]) collar((type==='p'?.264:.322)-(y>.10?.023:0),y,.009)
+  }
+  if (['heritage','filigree','fluted','rings'].includes(detail)) {
+    collar(type==='p'?.23:.285,.145,.012)
+    for (let iris=0;iris<16;iris++) {
+      const a=iris*Math.PI/8
+      const radius=type==='p'?.263:.321
+      const inset=new THREE.SphereGeometry(.011,8,6).scale(.75,1.4,.75)
+      list.push([inset,Math.sin(a)*radius,.071,Math.cos(a)*radius,0,.64])
+    }
+  }
+  if (detail==='obelisk' || detail==='helmet') {
+    const radius=type==='p'?.237:.286
+    for (let i=0;i<8;i++) {
+      const angle=i*Math.PI/4
+      list.push([new THREE.BoxGeometry(.038,.044,.034),Math.cos(angle)*radius,.127,Math.sin(angle)*radius,-angle, .59])
+    }
+  }
   const ball = (radius, y, x = 0, z = 0) => list.push([new THREE.SphereGeometry(radius, 20, 14), x, y, z])
   const box = (width, height, depth, x, y, z, angle = 0) => list.push([new THREE.BoxGeometry(width,height,depth),x,y,z,angle])
   if (type === 'p') ball(.145,.65)
@@ -84,26 +125,44 @@ function pieceGeometry(type,collection = 'staunton') {
     ball(.078,1.21)
   }
   if (type === 'k') {
-    box(.088,.26,.075,0,1.29,0)
-    box(.235,.077,.075,0,1.31,0)
+    const cross = new THREE.Shape()
+    const arms=[[-.039,1.168],[.039,1.168],[.039,1.284],[.104,1.284],[.115,1.326],[.039,1.326],[.039,1.40],[-.039,1.40],[-.039,1.326],[-.115,1.326],[-.104,1.284],[-.039,1.284]]
+    arms.forEach(([x,y],i)=>i?cross.lineTo(x,y):cross.moveTo(x,y))
+    cross.closePath()
+    const crown=new THREE.ExtrudeGeometry(cross,{depth:.055,bevelSize:.011,bevelThickness:.009,bevelSegments:3})
+    list.push([crown,0,0,-.0275])
+    collar(.173,1.052,.014)
     ball(.045,1.43)
   }
   if (type === 'n') {
     const outline = new THREE.Shape()
     outline.moveTo(-.19, .49)
     outline.bezierCurveTo(-.28,.70,-.24,1.00,-.03,1.12)
-    outline.lineTo(.01,1.25)
-    outline.quadraticCurveTo(.08,1.25,.11,1.13)
+    outline.quadraticCurveTo(-.047,1.201,-.005,1.254)
+    outline.quadraticCurveTo(.032,1.286,.06,1.167)
+    outline.quadraticCurveTo(.11,1.226,.118,1.13)
     outline.bezierCurveTo(.15,1.09,.20,1.00,.29,.93)
     outline.quadraticCurveTo(.39,.85,.29,.78)
     outline.quadraticCurveTo(.24,.74,.10,.83)
     outline.bezierCurveTo(.02,.76,.20,.57,.17,.49)
     outline.closePath()
-    const head = new THREE.ExtrudeGeometry(outline, { depth: .15, bevelThickness: .055, bevelSize: .047, bevelSegments: 5, curveSegments: 16 })
-    list.push([head,0,0,-.075])
+    const extrusion = new THREE.ExtrudeGeometry(outline,{depth:.13,bevelThickness:.049,bevelSize:.041,bevelSegments:5,curveSegments:16})
+    const head = new TessellateModifier(quality==='low'?.082:.046,4).modify(extrusion)
+    extrusion.dispose()
+    const vertices=head.attributes.position
+    for(let index=0;index<vertices.count;index++){
+      const x=vertices.getX(index),y=vertices.getY(index),z=vertices.getZ(index)-.065
+      const cheek=Math.exp(-((x-.012)**2/.018+(y-.907)**2/.032))
+      const neck=Math.exp(-((x+.075)**2/.025+(y-.666)**2/.033))
+      const taper=1-THREE.MathUtils.smoothstep(y,1.10,1.28)*.35
+      vertices.setZ(index,z*(taper+.41*cheek+.34*neck))
+    }
+    head.deleteAttribute('normal')
+    const smooth=mergeVertices(head)
+    head.dispose()
+    smooth.computeVertexNormals()
+    list.push([smooth])
     for (const side of [-1,1]) {
-      const cheek = new THREE.SphereGeometry(.096,24,16).scale(.89,1.31,.40)
-      list.push([cheek,.078,.923,side*.115])
       const eye = new THREE.SphereGeometry(.037,20,16).scale(1,.7,.55)
       list.push([eye,.125,1.008,side*.134,0,.63])
       const pupil = new THREE.SphereGeometry(.016,18,12).scale(1,.92,.52)
@@ -170,7 +229,7 @@ function surfaceTexture(kind, size = 512) {
   return texture
 }
 
-const palettes = {
+export const palettes = {
   walnut:['#d6ab79','#54291b','#422719','wood'],
   marble:['#e1dfd9','#666978','#25262c','marble'],
   jade:['#d8dbc0','#54736b','#233731','stone'],
@@ -191,16 +250,46 @@ const palettes = {
   chrome:['#ccd5db','#566471','#343c43','carbon'],
   sky:['#eed9c3','#8d7ba6','#4c405f','marble'],
   roman:['#e8d9ad','#965850','#572f2a','marble'],
+  liquid:['#aab7c4','#3e4857','#222833','carbon','liquid'],
+  lava:['#a77c53','#382523','#241b1b','stone','molten'],
+  glacier:['#acd5df','#42647e','#263d52','marble','frost'],
+  galaxy:['#877aa7','#272439','#20172b','stone','nebula'],
+  machine:['#a9905c','#454750','#262631','carbon','mechanical'],
+  water:['#83b8bd','#315b65','#183746','marble','water'],
+  energy:['#79b9bc','#203f50','#17303d','carbon','storm'],
+  bullion:['#d6ae62','#4e3f32','#342820','marble','celestial'],
+  'gold-vein':['#d0b98d','#3b3437','#29252b','marble','marble'],
+  projection:['#75a7c2','#293f63','#1c304b','carbon','hologram'],
+
 }
-export const themeList = Object.fromEntries(Object.entries(environments).map(([id,[label]])=>[id,label]))
-const finishes = {
+export const themeList = {...Object.fromEntries(Object.entries(environments).map(([id,[label]])=>[id,label])),
+  liquid:'Liquid metal',lava:'Volcanic basalt',glacier:'Frozen crystal',galaxy:'Cosmic galaxy',
+  machine:'Mechanical grid',water:'Water glass',energy:'Neon energy',bullion:'Animated gold',
+  'gold-vein':'Gold-veined marble',projection:'Holographic grid'}
+
+export const finishes = {
   ivory: [0xd4b992,.02,.34], ebony: [0x2b1e1c,.20,.25], gold: [0xdcad50,.85,.22],
   chrome: [0xbcc9d2,.97,.17], ceramic: [0xdbe0f5,.09,.20], jade: [0x386b61,.25,.27],
   walnut: [0x704224,.02,.35,'wood'], marble: [0xbac0ce,.03,.23,'marble'],
   obsidian: [0x201d26,.28,.15], glass: [0xd6f8ff,0,.08,null,.88],
   crystal: [0x91cae8,0,.12,null,.63], stone: [0xb9a68b,.02,.91,'stone'],
-  carbon: [0x33343d,.42,.36,'carbon'], holographic:[0x4bd7d3,.10,.24,null,.49],
+  carbon: [0x33343d,.42,.36,'carbon'], holographic:[0x4bd7d3,.10,.24,null,.49,'hologram'],
   'dark chrome':[0x454a55,.95,.20], 'rose gold':[0xd4a18d,.80,.23],
+  'liquid chrome':[0xa4b4c7,1,.1,null,0,'liquid'],
+  titanium:[0x39434f,.91,.24,'carbon'],
+  lacquer:[0x462523,.19,.19,'wood'],
+  brass:[0xb38a4a,.88,.21,null,0,'mechanical'],
+  molten:[0x714633,.45,.36,'stone',0,'molten'],
+  frost:[0xa9dbe7,.05,.17,null,.64,'frost'],
+  nebula:[0x8c7dc1,.28,.17,null,.26,'nebula'],
+  storm:[0x8791c4,.55,.27,null,0,'storm'],
+  emerald:[0x68ab92,.14,.12,null,.66],
+  sapphire:[0x547bbf,.19,.13,null,.46],
+  phantom:[0x82a0ac,.06,.21,null,.75,'phantom'],
+  celestial:[0xdec391,.72,.18,null,0,'celestial'],
+  'living marble':[0xb7b4ae,.11,.24,'marble',0,'marble'],
+  'midnight hologram':[0x29465d,.35,.18,null,.4,'hologram'],
+
 }
 export const finishList = Object.keys(finishes)
 
@@ -209,7 +298,22 @@ export class Board {
     this.host = host
     this.onSquare = onSquare
     this.stones = new Map()
+    this.time = {value:0}
+    this.keys = new Set()
+    this.pointers=new Set()
+    this.keyboard = event => {
+      if (this.mode!=='roam' || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || document.querySelector('dialog[open]')) return
+      if (/^Key[WASD]$/.test(event.code)) {
+        event.preventDefault()
+        if (event.type==='keydown') this.keys.add(event.code)
+        else this.keys.delete(event.code)
+      }
+    }
+    window.addEventListener('keydown',this.keyboard)
+    window.addEventListener('keyup',this.keyboard)
+    window.addEventListener('blur',()=>this.keys.clear())
     this.departing = []
+    this.effects = []
     this.collection = 'staunton'
     this.scene = new THREE.Scene()
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' })
@@ -219,7 +323,8 @@ export class Board {
     this.renderer.toneMappingExposure = 1.05
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     const room = new RoomEnvironment()
-    this.scene.environment = pmrem.fromScene(room,.05).texture
+    this.roomLighting=pmrem.fromScene(room,.05).texture
+    this.scene.environment=this.roomLighting
     this.scene.environmentIntensity = .58
     room.dispose()
     pmrem.dispose()
@@ -227,8 +332,12 @@ export class Board {
     this.camera = new THREE.PerspectiveCamera(40,1,.1,100)
     this.controls = new OrbitControls(this.camera,this.renderer.domElement)
     this.controls.enableDamping = true
-    this.controls.enablePan = false
-    this.controls.enableRotate = false
+    this.controls.enablePan = true
+    this.controls.enableRotate = true
+    this.controls.mouseButtons = { LEFT:null,MIDDLE:THREE.MOUSE.PAN,RIGHT:THREE.MOUSE.ROTATE }
+    this.controls.touches = { ONE:null,TWO:THREE.TOUCH.DOLLY_ROTATE }
+    this.controls.dampingFactor = .085
+    this.controls.autoRotateSpeed = .48
     this.controls.minDistance = 5.2
     this.controls.maxDistance = 26
     this.controls.maxPolarAngle = 1.48
@@ -243,12 +352,22 @@ export class Board {
     key.shadow.normalBias = .008
     key.shadow.radius = 3
     this.scene.add(key,new THREE.HemisphereLight(0xffebdd,0x433744,.86))
+    this.table = new THREE.Group()
+    this.scene.add(this.table)
     const base = (size,y,color,depth,bevel = .012) => {
       const mesh = new THREE.Mesh(boardFrame(size,depth,bevel),new THREE.MeshPhysicalMaterial({color,roughness:.38,clearcoat:.4}))
       mesh.position.y = y
       mesh.receiveShadow = true
-      this.scene.add(mesh)
+      this.table.add(mesh)
       return mesh
+    }
+    this.furniture = base(10.7,-.49,0x3e2c25,.21,.04)
+    const legs=new THREE.BoxGeometry(.32,2.9,.32)
+    for (const x of [-4.8,4.8]) for (const z of [-4.8,4.8]) {
+      const leg=new THREE.Mesh(legs,this.furniture.material)
+      leg.position.set(x,-1.94,z)
+      leg.receiveShadow=true
+      this.table.add(leg)
     }
     this.frame = base(8.88,-.148,0x3b241a,.46,.055)
     base(8.93,-.279,0x4e3221,.065,.018)
@@ -267,29 +386,51 @@ export class Board {
       this.coordinate(String(8-index),-4.22,index-3.5,0)
       this.coordinate(String(8-index),4.22,index-3.5,Math.PI)
     }
-    this.scene.add(this.engraving)
+    this.table.add(this.engraving)
     const tileGeometry = boardFrame(.998,.065,.004)
-    this.squares = []
+    this.boardPlane=new THREE.Plane(THREE.Object3D.DEFAULT_UP,-.098)
+    const instances=this.squareMaterials.map(material=>{
+      const mesh=new THREE.InstancedMesh(tileGeometry,material,8)
+      mesh.receiveShadow=true
+      this.table.add(mesh)
+      return mesh
+    })
+    const counts=Array(8).fill(0)
     this.markers = new Map()
+    this.squareMarker = new THREE.PlaneGeometry(.97,.97)
+    this.captureMarker = new THREE.RingGeometry(.405,.48,40)
+    this.moveMarker = new THREE.CircleGeometry(.115,24)
     for (let row=0;row<8;row++) for (let col=0;col<8;col++) {
       const square = squareAt(col,row)
-      const tile = new THREE.Mesh(tileGeometry,this.squareMaterials[((row+col)%2)*4+((row*3+col*7)%4)])
-      tile.position.copy(position(square))
-      tile.position.y = .064
-      tile.userData.square = square
-      tile.receiveShadow = true
-      this.scene.add(tile)
-      this.squares.push(tile)
-      const mark = new THREE.Mesh(new THREE.PlaneGeometry(.97,.97),new THREE.MeshBasicMaterial({
+      const index=((row+col)%2)*4+((Math.floor(row/2)+Math.floor(col/2))%4)
+      const p=position(square)
+      instances[index].setMatrixAt(counts[index]++,new THREE.Matrix4().makeTranslation(p.x,.064,p.z))
+      const mark = new THREE.Mesh(this.squareMarker,new THREE.MeshBasicMaterial({
         transparent:true,opacity:.48,depthWrite:false,
       }))
       mark.rotation.x = -Math.PI/2
       mark.position.copy(position(square)).setY(.101)
       mark.visible = false
-      this.scene.add(mark)
+      this.table.add(mark)
       this.markers.set(square,mark)
     }
+    instances.forEach((instance,index)=>{
+      instance.count=counts[index]
+      instance.instanceMatrix.needsUpdate=true
+    })
     this.materials = ['w','b'].map(() => new THREE.MeshPhysicalMaterial({clearcoat:.4,clearcoatRoughness:.2,vertexColors:true}))
+    this.detailMaterials = new Map()
+    this.accentMaterials = new Map()
+    this.solitaire = new THREE.Group()
+    this.solitaire.visible = false
+    this.scene.add(this.solitaire)
+    this.pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.16,.21,64),
+      new THREE.MeshPhysicalMaterial({color:0x272927,metalness:.62,roughness:.34}))
+    this.pedestal.position.y=-.115
+    this.pedestal.receiveShadow=true
+    this.solitaire.add(this.pedestal)
+    this.accentGeometry = new THREE.TorusGeometry(.245,.017,8,48).rotateX(Math.PI/2)
+    this.engravings = new Map()
     this.setTheme('walnut','ivory','ebony')
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(45,45),new THREE.ShadowMaterial({ opacity:.48 }))
     plane.rotation.x = -Math.PI/2
@@ -298,17 +439,45 @@ export class Board {
     this.scene.add(plane)
     this.ray = new THREE.Raycaster()
     this.renderer.domElement.addEventListener('pointerdown', event => {
+      if (event.pointerType==='touch') {
+        this.pointers.add(event.pointerId)
+        if(this.pointers.size>1){this.down=null;this.dragEntry=null;return}
+      }
+      if (event.button!==0 || this.preview || this.mode==='roam') return
       this.renderer.domElement.setPointerCapture(event.pointerId)
       this.down = { x:event.clientX,y:event.clientY,square:this.hit(event) }
     })
-    this.renderer.domElement.addEventListener('pointerup', event => {
-      if (!this.down || event.button !== 0) return
-      const target = this.hit(event)
-      if (this.controls.enableRotate && Math.hypot(event.clientX-this.down.x,event.clientY-this.down.y)>5) return
-      if (target && this.down.square !== target && this.dragStart?.(this.down.square)) this.onSquare(this.down.square)
-      if (target) this.onSquare(target)
-      this.down = null
+    this.renderer.domElement.addEventListener('pointermove',event=>{
+      const started=this.down
+      if(!started || Math.hypot(event.clientX-started.x,event.clientY-started.y)<5 || !this.dragStart?.(started.square))return
+      const entry=this.stones.get(started.square)
+      if(!entry)return
+      const point=this.rayFor(event).intersectPlane(this.boardPlane,new THREE.Vector3())
+      if(!point)return
+      this.dragEntry=entry
+      entry.mesh.position.set(THREE.MathUtils.clamp(point.x,-4,4),.29,THREE.MathUtils.clamp(point.z,-4,4))
+      this.dirty=true
     })
+    this.renderer.domElement.addEventListener('pointerup', event => {
+      this.pointers.delete(event.pointerId)
+      if (!this.down || event.button !== 0) return
+      const target = this.hit(event,Boolean(this.dragEntry))
+      this.dragEntry=null
+      const from=this.down
+      this.down=null
+      if (target && from.square !== target && this.currentSelected!==from.square && this.dragStart?.(from.square)) this.onSquare(from.square)
+      if (target) this.onSquare(target)
+    })
+    this.renderer.domElement.addEventListener('pointercancel',event=>{this.pointers.delete(event.pointerId);this.down=null;this.dragEntry=null})
+    this.renderer.domElement.addEventListener('dblclick',event=>{
+      if (this.solitaire.visible) return
+      const entry=this.stones.get(this.hit(event))
+      if (!entry || this.preview) return
+      this.focus = {target:entry.target.clone().add(new THREE.Vector3(0,.58,0)),
+        camera:entry.target.clone().add(new THREE.Vector3(2.0,2.5,3.7))}
+      this.dirty = true
+    })
+    this.renderer.domElement.addEventListener('pointerdown',()=>{ this.focus=null })
     this.resize = new ResizeObserver(() => {
       const {clientWidth:w,clientHeight:h} = host
       if (w && h) {
@@ -320,13 +489,29 @@ export class Board {
       }
     })
     this.resize.observe(host)
-    this.setQuality('high')
+    this.setQuality('low')
     this.renderer.setAnimationLoop(time => {
-      if (this.frameLimit && time-(this.lastFrame || 0)<1000/this.frameLimit-2) return
+      const frameLimit=this.frameLimit || (this.preview?36:0)
+      if (frameLimit && time-(this.lastFrame || 0)<1000/frameLimit-2) return
       if (!host.clientWidth || !host.clientHeight) return
-      if (this.showcase && !this.reduced) this.controls.autoRotate = true
+      if (this.showcase && !this.reduced && !this.backdropPaused) this.controls.autoRotate = true
       else this.controls.autoRotate = false
-      const cameraMoved = this.controls.update()
+      const elapsed = Math.min(.05,(time-(this.previousTime || time))/1000)
+      this.previousTime=time
+      if (!this.backdropPaused) this.time.value = this.reduced || !this.cosmetics ? 0 : time*.001
+      if (this.mode==='roam') this.moveCamera(elapsed)
+      if (this.focus) {
+        this.controls.target.lerp(this.focus.target,.115)
+        this.camera.position.lerp(this.focus.camera,.115)
+        if (this.camera.position.distanceToSquared(this.focus.camera)<.002) this.focus=null
+      }
+      const cameraMoved = this.controls.update(elapsed)
+      this.constrainCamera()
+      if (this.solitaire.visible && !this.reduced) {
+        this.soloMesh.rotation.y += elapsed*.32
+        if (this.soloMesh.userData.gear && this.cosmetics) this.soloMesh.userData.gear.rotation.y+=elapsed*1.1
+        this.dirty=true
+      }
       for (let i=this.departing.length-1;i>=0;i--) {
         const capture = this.departing[i]
         const t = this.reduced ? 1 : Math.min(1,(performance.now()-capture.started)/340)
@@ -341,21 +526,28 @@ export class Board {
       }
       let moving = false
       for (const entry of this.stones.values()) {
-        if (this.reduced) entry.mesh.position.copy(entry.target)
-        else if (entry.mesh.position.distanceToSquared(entry.target) > .00001) {
-          entry.mesh.position.lerp(entry.target,.22)
-          moving = true
-        } else entry.mesh.position.copy(entry.target)
-        if (entry.type === 'n' && entry.hop && !this.reduced) {
-          const phase = (performance.now()-entry.hop)/260
-          if (phase < 1) {
-            entry.mesh.position.y = entry.target.y + Math.sin(phase*Math.PI)*.32
-            moving = true
-          }
-          else entry.hop = null
+        if (this.dragEntry===entry) continue
+        if (entry.mesh.userData.gear && this.cosmetics && !this.reduced) entry.mesh.userData.gear.rotation.y+=elapsed*.74
+        const flight = entry.flight
+        if (flight && !this.reduced) {
+          const t=Math.min(1,(time-flight.start)/flight.duration)
+          const eased=t*t*(3-2*t)
+          entry.mesh.position.lerpVectors(flight.from,entry.target,flight.style==='teleport' ? Number(t>.44) : eased)
+          entry.mesh.position.y+=Math.sin(Math.PI*t)*flight.height
+          entry.mesh.scale.setScalar(1-flight.shrink*Math.sin(Math.PI*t))
+          if (t===1) entry.flight=null
+          else moving=true
+        } else {
+          entry.mesh.scale.setScalar(1)
+          if (this.reduced) entry.mesh.position.copy(entry.target)
+          else if (entry.mesh.position.distanceToSquared(entry.target)>.00001) {
+            entry.mesh.position.lerp(entry.target,.27)
+            moving=true
+          } else entry.mesh.position.copy(entry.target)
         }
       }
-      if (this.dirty || cameraMoved || moving || this.wasMoving) {
+      if (this.effects.length) this.updateEffects(time)
+      if (this.dirty || cameraMoved || moving || this.wasMoving || (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)) {
         this.lastFrame = time
         this.renderer.render(this.scene,this.camera)
         this.dirty = false
@@ -393,10 +585,31 @@ export class Board {
     this.dirty = true
   }
 
+  useLighting(quality) {
+    this.wantsHDR=quality!=='low' && this.reflections!==false
+    this.scene.environment=this.wantsHDR && this.hdrLighting || this.roomLighting
+    this.scene.environmentIntensity=this.scene.environment===this.roomLighting?.58:.49
+    if(!this.wantsHDR || this.hdrLighting || this.loadingHDR) return
+    this.loadingHDR=true
+    new HDRLoader().load('/lighting/studio-small.hdr',texture=>{
+      const generator=new THREE.PMREMGenerator(this.renderer)
+      this.hdrLighting=generator.fromEquirectangular(texture).texture
+      generator.dispose()
+      texture.dispose()
+      this.loadingHDR=false
+      if(this.wantsHDR) {
+        this.scene.environment=this.hdrLighting
+        this.scene.environmentIntensity=.49
+        this.dirty=true
+      }
+    },undefined,()=>{this.loadingHDR=false})
+  }
+
   setQuality(quality) {
+    this.useLighting(quality)
     this.dirty = true
     this.quality = quality
-    const size = quality==='photo'?4096:quality==='ultra'?2048:0
+    const size = this.textureSize(quality)
     if (size && !this.woodMaps.has(size)) {
       this.woodMaps.set(size,null)
       new THREE.TextureLoader().load('/textures/walnut-'+size+'.webp', texture => {
@@ -406,9 +619,11 @@ export class Board {
         if (this.quality===quality && this.currentTheme) this.setTheme(...this.currentTheme)
       }, undefined, () => this.woodMaps.delete(size))
     }
-    const settings = {low:[1,0],medium:[1.25,768],high:[1.5,1024],ultra:[2,1536],photo:[2.5,2048]}
-    const [ratio,shadow] = settings[quality] || settings.high
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio,ratio))
+    const settings = {low:[1,0],medium:[1.25,768],high:[1.5,1024],ultra:[2,1536],photo:[2.5,2048],custom:[1.5,1024]}
+    const [ratio,defaultShadow] = settings[quality] || settings.high
+    const shadow = this.shadows===false ? 0 : defaultShadow
+    const pixelRatio=Math.min(devicePixelRatio,this.preview?Math.min(1.25,ratio):ratio)
+    if(this.renderer.getPixelRatio()!==pixelRatio)this.renderer.setPixelRatio(pixelRatio)
     this.renderer.shadowMap.enabled = shadow > 0
     if (shadow && this.key.shadow.mapSize.x !== shadow) {
       this.key.shadow.map?.dispose()
@@ -433,26 +648,45 @@ export class Board {
     return variants[index]
   }
 
-  setTheme(key, white, black, environment = key, collection = 'staunton') {
+  textureSize(quality) {
+    if (this.textureQuality==='2k') return 2048
+    if (this.textureQuality==='4k') return 4096
+    if (this.textureQuality==='low') return 0
+    return quality==='photo'?4096:quality==='ultra'?2048:0
+  }
+
+  setTheme(key, white, black, environment = key, collection = 'staunton', overrides = {}) {
+    this.overrides=overrides
+    this.animated=false
     this.collection = collection
-    this.currentTheme = [key,white,black,environment,collection]
+    this.currentTheme = [key,white,black,environment,collection,overrides]
+    this.finishes=[white,black]
     this.dirty = true
-    const [light,dark,frame,type] = palettes[key] || palettes.walnut
+    const [light,dark,frame,type,pattern] = palettes[key] || palettes.walnut
     this.host.parentNode.style.setProperty('--light-square',light)
     this.host.parentNode.style.setProperty('--dark-square',dark)
     this.host.parentNode.style.setProperty('--stage',frame)
-    const size = this.quality==='photo'?4096:this.quality==='ultra'?2048:0
-    const textureFor = id => id==='wood' && this.woodMaps.get(size) || this.textures[id]
+    this.textureFor = id => id==='wood' && this.woodMaps.get(this.textureSize(this.quality)) || this.textures[id]
+    const textureFor = this.textureFor
+    this.animated=Boolean(pattern) || collection==='mechanical'
     this.squareMaterials.forEach((material,index) => {
       const map = this.variedTexture(textureFor(type),index)
       material.color.set(index<4?light:dark).multiplyScalar(.98+(index%4)*.025)
       material.map = map
       material.bumpMap = map
       material.bumpScale = type==='stone' ? .022 : .009
+      material.envMapIntensity = this.reflections ? 1.1 : .35
+      material.metalness = ['liquid','mechanical','celestial'].includes(pattern)?.43:.03
+      animateSurface(material,pattern,this.time)
       material.clearcoat = type==='marble' ? .82 : .38
       material.roughness = type==='marble' ? .29 : .51
       material.needsUpdate = true
     })
+    this.furniture.material.map=textureFor('wood')
+    this.furniture.material.roughness=.68
+    this.furniture.material.bumpMap=textureFor('wood')
+    this.furniture.material.bumpScale=.009
+    this.furniture.material.needsUpdate=true
     this.frame.material.map = textureFor(type)
     this.frame.material.bumpMap = textureFor(type)
     this.frame.material.bumpScale = .008
@@ -460,37 +694,194 @@ export class Board {
     this.frame.material.color.set(frame)
     this.rim.material.color.set(frame).multiplyScalar(1.65)
     this.key.color.setHex((environments[environment] || environments.walnut)[2])
-    ;[white,black].forEach((finish,i) => {
-      const [color,metalness,roughness,map,transmission=0] = finishes[finish] || finishes[i ? 'ebony' : 'ivory']
-      const material = this.materials[i]
-      Object.assign(material,{ metalness,roughness,transmission,thickness:.38,ior:1.46,
-        clearcoat:finish==='stone'?.15:.65,map:textureFor(map) || null,
-        bumpMap:textureFor(map) || null,bumpScale:.008 })
-      material.color.set(color)
-      material.emissive.setHex(finish==='holographic' ? 0x157a7e : 0)
-      material.emissiveIntensity = finish==='holographic' ? .35 : 0
-      material.needsUpdate = true
-    })
+    ;[white,black].forEach((finish,i)=>this.styleMaterial(this.materials[i],finish,i))
+    for (const [key,material] of this.detailMaterials) {
+      const [side,type]=key.split(':')
+      const spec=this.spec(type,side)
+      this.styleMaterial(material,spec.material,side==='w'?0:1,spec)
+    }
+    for (const [key,material] of this.accentMaterials) {
+      const [side,type]=key.split(':')
+      const spec=this.spec(type,side)
+      this.styleMaterial(material,spec.secondary || 'brass',side==='w'?0:1)
+    }
+  }
+
+  spec(type,color) {
+    const detail=this.overrides?.[color]?.[type] || {}
+    return {collection:this.collection,material:this.finishes?.[color==='w'?0:1],...detail}
+  }
+
+  styleMaterial(material,finish,index,spec={}) {
+    const [color,metalness,roughness,map,transmission=0,pattern] = finishes[finish] || finishes[index?'ebony':'ivory']
+    Object.assign(material,{metalness:spec.metalness ?? metalness,roughness:spec.roughness ?? roughness,
+      envMapIntensity:(spec.reflection ?? 1)*(this.reflections===false?.26:1),
+      transmission,thickness:.34,ior:1.46,anisotropy:metalness>.6?.26:0,
+      clearcoat:finish==='stone'?.15:.66,map:this.textureFor(map) || null,
+      bumpMap:this.textureFor(map) || null,bumpScale:.014})
+    material.color.set(spec.tint || color)
+    const emissive=spec.emissive || (finish==='holographic' ? 0x157a7e : 0)
+    material.emissive.set(emissive)
+    material.emissiveIntensity=emissive?.26:0
+    animateSurface(material,pattern,this.time)
+    material.needsUpdate = true
+    this.animated ||= Boolean(pattern)
+  }
+
+  materialFor(type,color,spec) {
+    const override=this.overrides?.[color]?.[type]
+    if (!override) return this.materials[color==='w'?0:1]
+    const key=color+':'+type
+    if (!this.detailMaterials.has(key)) {
+      const material=new THREE.MeshPhysicalMaterial({clearcoatRoughness:.2,vertexColors:true})
+      this.styleMaterial(material,spec.material,color==='w'?0:1,spec)
+      this.detailMaterials.set(key,material)
+    }
+    return this.detailMaterials.get(key)
+  }
+
+  createPiece(type,color,spec) {
+    const group=new THREE.Group()
+    const model=new THREE.Mesh(pieceGeometry(type,spec.collection,spec.base,this.geometryQuality),this.materialFor(type,color,spec))
+    model.castShadow = model.receiveShadow = true
+    const pad=new THREE.Mesh(feltGeometry,felt)
+    pad.position.y=.003
+    if (type==='p') pad.scale.set(.82,1,.82)
+    group.add(model,pad)
+    if (spec.secondary || spec.collection==='mechanical') {
+      const key=color+':'+type
+      if (!this.accentMaterials.has(key)) {
+        const material=new THREE.MeshPhysicalMaterial()
+        this.styleMaterial(material,spec.secondary || 'brass',color==='w'?0:1)
+        this.accentMaterials.set(key,material)
+      }
+      const accent=new THREE.Mesh(this.accentGeometry,this.accentMaterials.get(key))
+      accent.position.y=.194
+      accent.scale.setScalar(type==='p'?.82:1)
+      group.add(accent)
+      if (spec.collection==='mechanical') {
+        const gear=new THREE.Mesh(gearGeometry,this.accentMaterials.get(key))
+        gear.position.y=.31
+        gear.scale.setScalar(type==='p'?.78:1)
+        group.add(gear)
+        group.userData.gear=gear
+        this.animated=true
+      }
+    }
+    if (spec.engraving && spec.engraving!=='none') {
+      const key=spec.engraving
+      if (!this.engravings.has(key)) {
+        const canvas=document.createElement('canvas')
+        canvas.width=256; canvas.height=32
+        const ctx=canvas.getContext('2d')
+        ctx.font='bold 18px Georgia'
+        ctx.textBaseline='middle'
+        ctx.fillStyle='#d6b877'
+        ctx.fillText(key==='diamond'?'◆    ◆    ◆    ◆    ◆    ◆    ◆    ◆':'♛    ♛    ♛    ♛    ♛    ♛    ♛',3,16)
+        const tex=new THREE.CanvasTexture(canvas)
+        tex.colorSpace=THREE.SRGBColorSpace
+        this.engravings.set(key,new THREE.MeshBasicMaterial({map:tex,transparent:true,alphaTest:.02,depthWrite:false}))
+      }
+      const engraving=new THREE.Mesh(engravingBand,this.engravings.get(key))
+      engraving.position.y=.071
+      if(type==='p') engraving.scale.set(.82,1,.82)
+      group.add(engraving)
+    }
+    return group
+  }
+
+  inspectPiece(type='n',color='w') {
+    if (this.soloMesh) this.solitaire.remove(this.soloMesh)
+    this.soloMesh=this.createPiece(type,color,this.spec(type,color))
+    this.soloMesh.rotation.y=.42
+    this.solitaire.add(this.soloMesh)
+    this.solitaire.visible=true
+    this.table.visible=false
+    for (const entry of this.stones.values()) entry.mesh.visible=false
+    if (this.mode!=='specimen') this.reset('specimen')
+    this.dirty=true
+  }
+
+  showBoard() {
+    this.solitaire.visible=false
+    this.table.visible=true
+    for (const entry of this.stones.values()) entry.mesh.visible=true
+    this.dirty=true
+  }
+
+  moveCamera(dt) {
+    const forward=new THREE.Vector3()
+    this.camera.getWorldDirection(forward)
+    forward.y=0
+    forward.normalize()
+    const sideways=new THREE.Vector3().crossVectors(forward,THREE.Object3D.DEFAULT_UP)
+    const vertical=Number(this.keys.has('KeyW'))-Number(this.keys.has('KeyS'))
+    const horizontal=Number(this.keys.has('KeyD'))-Number(this.keys.has('KeyA'))
+    if (!vertical && !horizontal) return
+    const delta=forward.multiplyScalar(vertical).addScaledVector(sideways,horizontal).normalize().multiplyScalar(4.5*dt)
+    this.camera.position.add(delta)
+    this.controls.target.add(delta)
+    this.dirty=true
+  }
+
+  constrainCamera() {
+    if (this.mode==='specimen') return
+    const {position}=this.camera
+    position.x=THREE.MathUtils.clamp(position.x,-17,17)
+    position.z=THREE.MathUtils.clamp(position.z,-17,17)
+    if(this.mode==='roam') {
+      position.y=Math.max(position.y,1.15)
+      if (Math.max(Math.abs(position.x),Math.abs(position.z))<4.65 && position.y<2.15) position.y=2.15
+    }
   }
 
   reset(mode = 'angled', flipped = false) {
+    this.mode=mode
+    this.down=null
+    this.dragEntry=null
+    this.focus=null
+    this.keys.clear()
     this.dirty = true
-    const y = {low:5.1,overhead:14,close:3.6}[mode] || 10.9
-    const distance = {low:14.4,overhead:.01,close:6.2}[mode] || 11.6
-    this.camera.position.set(mode === 'close' ? 3.7 : 0,y,distance*(flipped?-1:1))
-    this.controls.target.set(0,.12,mode === 'close' ? (flipped?-2.1:2.1) : 0)
-    this.controls.enableRotate = ['orbit','close','showcase'].includes(mode)
-    this.showcase = mode === 'showcase'
+    const poses={
+      low:[3.3,6.4,14.4,0,.12,0],board:[4.1,2.9,13,0,.12,0],overhead:[0,14,.01,0,.12,0],
+      close:[3.7,3.6,6.2,0,.12,2.1],roam:[7,3.15,9,0,1.7,0],
+      seated:[0,2.35,10,0,.25,0],showcase:[3.15,9.1,14,0,.12,0],
+      hero:[5.3,6.8,11.6,0,.12,0],specimen:[1.15,1.15,2.55,0,.68,0],
+    }
+    const [x,y,z,tx,ty,tz]=poses[mode] || [0,10.9,11.6,0,.12,0]
+    this.camera.position.set(x,y,z*(flipped?-1:1))
+    this.controls.target.set(tx,ty,tz*(flipped?-1:1))
+    this.controls.minDistance = mode==='specimen' ? 1.35 : 4.3
+    this.controls.maxDistance = mode==='specimen' ? 6 : 29
+    this.controls.maxPolarAngle = mode==='specimen' ? 1.72 : mode==='roam' ? 1.80 : 1.52
+    this.controls.enablePan=mode!=='specimen'
+    this.controls.mouseButtons.LEFT=mode==='specimen'?THREE.MOUSE.ROTATE:null
+    this.controls.touches.ONE=mode==='specimen'?THREE.TOUCH.ROTATE:null
+    this.showcase = ['showcase','hero'].includes(mode)
+    this.controls.autoRotate=false
     this.controls.update()
   }
 
-  hit(event) {
+  async photograph() {
+    this.renderer.render(this.scene,this.camera)
+    return new Promise(resolve=>this.renderer.domElement.toBlob(resolve,'image/png'))
+  }
+
+  rayFor(event) {
     const bounds = this.renderer.domElement.getBoundingClientRect()
     this.ray.setFromCamera(new THREE.Vector2((event.clientX-bounds.left)/bounds.width*2-1,-(event.clientY-bounds.top)/bounds.height*2+1),this.camera)
-    const figures = this.ray.intersectObjects([...this.stones.values()].map(p => p.mesh),true)
-    const piece = figures[0]?.object.parent.userData.square
-    const tile = this.ray.intersectObjects(this.squares)[0]?.object.userData.square
-    return piece || tile
+    return this.ray.ray
+  }
+
+  hit(event,dragging=false) {
+    this.rayFor(event)
+    if(!dragging){
+      const figures=this.ray.intersectObjects([...this.stones.values()].map(piece=>piece.mesh),true)
+      const piece=figures[0]?.object.parent.userData.square
+      if(piece)return piece
+    }
+    const point=this.ray.ray.intersectPlane(this.boardPlane,new THREE.Vector3())
+    if (point && Math.abs(point.x)<4 && Math.abs(point.z)<4) return squareAt(Math.floor(point.x+4),Math.floor(point.z+4))
   }
 
   animateCapture(entry) {
@@ -498,63 +889,53 @@ export class Board {
     const from = entry.mesh.position.clone()
     const to = new THREE.Vector3(from.x<0?-5.2:5.2,-.3,from.z)
     this.departing.push({from,to,mesh:entry.mesh,started:performance.now()})
-  }
-
-  inspect(host) {
-    const scene = new THREE.Scene()
-    scene.environment = this.scene.environment
-    scene.environmentIntensity = .9
-    const renderer = new THREE.WebGLRenderer({alpha:true,antialias:true})
-    renderer.setPixelRatio(Math.min(devicePixelRatio,2))
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
-    host.append(renderer.domElement)
-    const camera = new THREE.PerspectiveCamera(35,1,.1,20)
-    camera.position.set(2.3,1.6,3.2)
-    const controls = new OrbitControls(camera,renderer.domElement)
-    controls.target.set(0,.66,0)
-    controls.minDistance = 1.5
-    controls.maxDistance = 7
-    controls.enablePan = false
-    controls.enableDamping = true
-    const light = new THREE.DirectionalLight(0xffead5,2.1)
-    light.position.set(3,5,3)
-    scene.add(light,new THREE.HemisphereLight(0xfff1dc,0x403840,1.15))
-    const model = new THREE.Mesh(pieceGeometry('n',this.collection),this.materials[0])
-    const pad = new THREE.Mesh(feltGeometry,felt)
-    scene.add(model,pad)
-    let dirty = true
-    const observer = new ResizeObserver(() => {
-      if (!host.clientWidth || !host.clientHeight) return
-      renderer.setSize(host.clientWidth,host.clientHeight)
-      camera.aspect = host.clientWidth/host.clientHeight
-      camera.updateProjectionMatrix()
-      dirty = true
-    })
-    observer.observe(host)
-    renderer.setAnimationLoop(() => {
-      if (controls.update() || dirty) {
-        renderer.render(scene,camera)
-        dirty = false
-      }
-    })
-    return {
-      select: (piece,color) => {
-        dirty = true
-        model.geometry = pieceGeometry(piece,this.collection)
-        model.material = this.materials[color==='w'?0:1]
-        pad.scale.set(piece==='p'?.82:1,1,piece==='p'?.82:1)
-      },
-      close: () => {
-        observer.disconnect()
-        controls.dispose()
-        renderer.setAnimationLoop(null)
-        renderer.dispose()
-        renderer.forceContextLoss()
-      },
+    if (this.captureEffect && this.captureEffect!=='none' && this.cosmetics && this.particles!==false) {
+      const color={gold:0xe1b86b,crystal:0xa7d9e5,signal:0x70a0f4,ember:0xc86741}[this.captureEffect]
+      const geometry=new THREE.BufferGeometry()
+      const points=new Float32Array(54)
+      geometry.setAttribute('position',new THREE.BufferAttribute(points,3))
+      const material=new THREE.PointsMaterial({color,size:.085,transparent:true,depthWrite:false,opacity:.7})
+      const burst=new THREE.Points(geometry,material)
+      burst.position.copy(from)
+      burst.position.y+=.18
+      this.scene.add(burst)
+      this.effects.push({burst,points,start:performance.now()})
     }
   }
 
+  updateEffects(time) {
+    this.dirty=true
+    for(let i=this.effects.length-1;i>=0;i--) {
+      const {burst,points,start}=this.effects[i]
+      const t=Math.min(1,(time-start)/420)
+      for(let j=0;j<points.length/3;j++) {
+        const angle=j*2.39996
+        const range=.15+t*(.68+(j%4)*.13)
+        points[j*3]=Math.cos(angle)*range
+        points[j*3+1]=Math.sin(t*2.3)*(.21+(j%5)*.074)
+        points[j*3+2]=Math.sin(angle)*range
+      }
+      burst.geometry.attributes.position.needsUpdate=true
+      burst.material.opacity=(1-t)*.68
+      if(t===1 || this.reduced) {
+        this.scene.remove(burst);burst.geometry.dispose();burst.material.dispose()
+        this.effects.splice(i,1)
+      }
+    }
+  }
+
+  fly(entry) {
+    if (!entry) return
+    const spec=this.spec(entry.type,entry.color)
+    const style=spec.motion || this.moveStyle || 'glide'
+    const properties={glide:[245,.13,0],lift:[285,.39,0],cinematic:[345,.31,.04],
+      teleport:[175,.06,.89],liquid:[275,.2,.26],hologram:[230,.14,.72],dissolve:[255,.13,.59],mechanical:[205,.12,.05]}
+    const [duration,height,shrink]=properties[style] || properties.glide
+    entry.flight={style,from:entry.mesh.position.clone(),start:performance.now(),duration,height:height+(entry.type==='n'?.12:0),shrink}
+  }
+
   render(chess,selected,legal,last,animate,visible) {
+    this.currentSelected=selected
     this.dirty = true
     if (animate && last && this.stones.has(last.from)) {
       const old = this.stones.get(last.from)
@@ -567,7 +948,7 @@ export class Board {
         const rook = this.stones.get(rookFrom)
         this.stones.delete(last.from)
         this.stones.delete(rookFrom)
-        if (rook) this.stones.set(rookTo,rook)
+        if (rook) { this.stones.set(rookTo,rook); this.fly(rook) }
       } else {
         const capturedSquare = last.flags.includes('e') ? last.to[0]+last.from[1] : last.to
         const captured = this.stones.get(capturedSquare)
@@ -578,26 +959,24 @@ export class Board {
         this.stones.delete(last.from)
       }
       this.stones.set(destination,old)
-      if (old.type === 'n') old.hop = performance.now()
+      this.fly(old)
     }
     const active = new Set()
     for (const piece of chess.board().flat().filter(Boolean)) {
       const {square,type,color} = piece
       active.add(square)
       let entry = this.stones.get(square)
-      if (!entry || entry.type !== type || entry.color !== color || entry.collection !== this.collection) {
+      const spec=this.spec(type,color)
+      const visual=JSON.stringify(spec)+this.geometryQuality
+      if (!entry || entry.type !== type || entry.color !== color || entry.visual !== visual) {
+        const oldPosition=entry?.mesh.position.clone()
         if (entry) this.scene.remove(entry.mesh)
-        const mesh = new THREE.Group()
-        const model = new THREE.Mesh(pieceGeometry(type,this.collection),this.materials[color === 'w' ? 0 : 1])
-        model.castShadow = model.receiveShadow = true
-        const pad = new THREE.Mesh(feltGeometry,felt)
-        pad.position.y = .003
-        if (type === 'p') pad.scale.set(.82,1,.82)
-        mesh.add(model,pad)
+        const mesh=this.createPiece(type,color,spec)
         if (type === 'n') mesh.rotation.y = color === 'w' ? -.38 : Math.PI-.38
-        mesh.position.copy(position(square))
+        mesh.position.copy(oldPosition || position(square))
+        mesh.visible=!this.solitaire.visible
         this.scene.add(mesh)
-        entry = {mesh,type,color,collection:this.collection,target:position(square)}
+        entry = {mesh,type,color,visual,target:position(square)}
         this.stones.set(square,entry)
       }
       entry.mesh.userData.square = square
@@ -610,12 +989,13 @@ export class Board {
     for (const [square,mark] of this.markers) {
       const piece = chess.get(square)
       const inCheck = piece?.type === 'k' && piece.color === chess.turn() && chess.isCheck()
-      const color = inCheck ? 0xc85150 : square === selected ? 0x94d9ae : legal.includes(square) ? 0x5bbf98
+      const hint={blue:0x77baf1,gold:0xe4bf70,green:0x85c8a2}[this.highlight] || 0x85c8a2
+      const color = inCheck ? 0xc85150 : square === selected ? hint : legal.includes(square) ? hint
         : last && [last.from,last.landing || last.to].includes(square) ? 0xe6ad4f : visible && !visible.has(square) ? 0x10121b : null
       mark.visible = color !== null
       mark.material.opacity = visible && !visible.has(square) ? .82 : .48
       if (color !== null) mark.material.color.setHex(color)
-      mark.scale.setScalar(legal.includes(square) && !piece ? .24 : 1)
+      mark.geometry=legal.includes(square)?(piece?this.captureMarker:this.moveMarker):this.squareMarker
     }
   }
 }

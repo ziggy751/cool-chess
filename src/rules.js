@@ -1,24 +1,59 @@
 import { Chess } from 'chess.js'
+import { Chess as Chessops } from 'chessops/chess'
+import { parseFen } from 'chessops/fen'
 import { makeChess } from './variants.js'
 
 export const START = new Chess().fen()
 export const TIMES = [0, 1, 2, 3, 5, 10, 15, 30]
+export const validClock = (minutes,increment=0) => Number.isInteger(minutes) && minutes>=0 && minutes<=180
+  && Number.isInteger(increment) && increment>=0 && increment<=60 && (minutes>0 || increment===0)
 export const opposite = color => color === 'w' ? 'b' : 'w'
 const positionKey = fen => fen.split(' ').slice(0, 4).join(' ')
 
 export class Match {
-  constructor({ fen, variant = 'standard', minutes = 10, now = Date.now() } = {}) {
-    if (!TIMES.includes(minutes)) throw new Error('Unsupported time control')
+  constructor({ fen, variant = 'standard', minutes = 10, increment = 0, now = Date.now() } = {}) {
+    if (!validClock(minutes,increment)) throw new Error('Unsupported time control')
     this.variant = variant
     this.chess = makeChess(fen,variant)
+    if (this.chess instanceof Chess) {
+      for (const [color,rank] of [['w','1'],['b','8']]) {
+        const king=this.chess.get('e'+rank)
+        const right=this.chess.get('h'+rank)
+        const left=this.chess.get('a'+rank)
+        if (king?.type!=='k' || king.color!==color) this.chess.setCastlingRights(color,{k:false,q:false})
+        else {
+          if (right?.type!=='r' || right.color!==color) this.chess.setCastlingRights(color,{k:false})
+          if (left?.type!=='r' || left.color!==color) this.chess.setCastlingRights(color,{q:false})
+        }
+      }
+    }
     this.initial = this.chess.fen()
     this.minutes = minutes
+    this.increment = increment
+    this.began = now
+    this.finishedAt = null
     this.clocks = { w: minutes * 60000, b: minutes * 60000 }
     this.started = now
     this.result = null
     this.drawOffer = null
     this.occurrences = new Map([[this.key(), 1]])
-    this.checkResult()
+    this.checkResult(now)
+  }
+
+  static restore(record) {
+    const match=new Match({fen:record.initial,variant:record.variant,minutes:record.minutes,increment:record.increment,now:0})
+    for(const move of record.moves) match.move(move,undefined,0)
+    for(const key of ['started','began','finishedAt','clocks','drawOffer','result']) {
+      if (record[key]!==undefined) match[key]=record[key]
+    }
+    if(record.began===undefined)match.began=record.started
+    return match
+  }
+
+  save() {
+    return {initial:this.initial,variant:this.variant,minutes:this.minutes,increment:this.increment,
+      started:this.started,began:this.began,finishedAt:this.finishedAt,clocks:this.clocks,drawOffer:this.drawOffer,result:this.result,
+      moves:this.chess.history({verbose:true}).map(({from,to,promotion,drop})=>({from,to,promotion,drop}))}
   }
 
   key() { return this.chess.positionKey?.() ?? positionKey(this.chess.fen()) }
@@ -37,6 +72,7 @@ export class Match {
     if (this.result) return
     this.clocks = this.remaining(now)
     this.result = { winner, reason }
+    this.finishedAt = now
     this.drawOffer = null
   }
 
@@ -44,10 +80,12 @@ export class Match {
     const turn = this.chess.turn()
     if (!this.result && this.minutes && this.remaining(now)[turn] === 0) {
       const opponent = opposite(turn)
-      const material = this.chess.board().flat().filter(Boolean)
-      const matingPieces = material.filter(piece => piece.color === opponent && piece.type !== 'k')
-      const bareLoser = material.filter(piece => piece.color === turn).length === 1
-      const canMate = this.variant !== 'standard' && this.variant !== 'fog' ? !this.chess.pos.hasInsufficientMaterial(opponent==='w'?'white':'black') : matingPieces.length > 0 && !(bareLoser && matingPieces.length === 1 && /[bn]/.test(matingPieces[0].type))
+      const victor=opponent==='w'?'white':'black'
+      const variant=this.chess.pos
+      const ordinary=variant || parseFen(this.chess.fen()).chain(setup=>Chessops.fromSetup(setup)).unwrap(
+        value=>value,()=>null)
+      const canMate=ordinary ? !ordinary.hasInsufficientMaterial(victor) :
+        this.chess.board().flat().some(piece=>piece?.color===opponent && piece.type!=='k')
       this.finish(canMate ? opponent : null, canMate ? 'Time forfeit' : 'Timeout with insufficient mating material', now)
     }
   }
@@ -56,13 +94,23 @@ export class Match {
     this.tick(now)
     if (this.result || color !== this.chess.turn()) throw new Error('It is not your turn')
     const clocks = this.remaining(now)
-    const played = this.chess.move(move)
+    const played = this.legalMove(move)
+    if (this.minutes) clocks[color]+=this.increment*1000
     this.clocks = clocks
     this.started = now
     this.drawOffer = null
     const key = this.key()
     this.occurrences.set(key, (this.occurrences.get(key) || 0) + 1)
     this.checkResult(now)
+    return played
+  }
+
+  legalMove(move) {
+    const played=this.chess.move(move)
+    if(played.captured==='k') {
+      this.chess.undo()
+      throw new Error('A king cannot be captured')
+    }
     return played
   }
 
@@ -83,7 +131,7 @@ export class Match {
     const current = this.claimable()
     if (current) return this.finish(null, current, now)
     if (!move) throw new Error('No draw can be claimed')
-    this.chess.move(move)
+    this.legalMove(move)
     const key = this.key()
     const halfmoves = this.halfmoves()
     this.chess.undo()
@@ -106,7 +154,7 @@ export class Match {
   snapshot(now = Date.now()) {
     this.tick(now)
     return { variant:this.variant, fen: this.chess.fen(), initial: this.initial, moves: this.chess.history({ verbose: true }),
-      clocks: this.remaining(now), minutes: this.minutes, result: this.result,
+      clocks: this.remaining(now), minutes: this.minutes, increment:this.increment, duration:Math.max(0,(this.finishedAt ?? now)-this.began), result: this.result,
       drawOffer: this.drawOffer, claimable: this.claimable() }
   }
 }

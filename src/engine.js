@@ -36,8 +36,24 @@ export class Engine {
   }
 
   async move(fen, level, time, style) {
+    if (level<=10) {
+      const minimum=performance.now()+Math.min(time,2000)
+      const worker=this.beginner ||= new Worker(new URL('./beginner-worker.js',import.meta.url),{type:'module'})
+      const move=await new Promise((resolve,reject)=>{
+        this.weakResolve=resolve
+        worker.onmessage=({data})=>{
+          this.weakResolve=null
+          if(data.error)reject(new Error(data.error))
+          else resolve(data.move)
+        }
+        worker.onerror=event=>reject(new Error(event.message || 'Beginner engine failed'))
+        worker.postMessage({fen,level,style})
+      })
+      if(performance.now()<minimum) await new Promise(resolve=>setTimeout(resolve,minimum-performance.now()))
+      return this.closed?null:move
+    }
     const expressive = level>9 && level<28 && style!==undefined && ![7,9].includes(style)
-    const result = await this.search(fen,level,time,expressive?3:1)
+    const result = await this.search(fen,level,Math.max(28,time),expressive?3:1)
     if (!expressive || result?.score?.type!=='cp') return result?.move
     let choice = result.move, best = -Infinity
     for (const line of result.lines) {
@@ -62,7 +78,7 @@ export class Engine {
     const skill = Math.round((level - 1) * 20 / 29)
     this.worker.postMessage('setoption name Skill Level value ' + skill)
     this.worker.postMessage('setoption name UCI_LimitStrength value ' + (level >= 10 && level < 28))
-    this.worker.postMessage('setoption name UCI_Elo value ' + Math.round(1320 + Math.min(17, Math.max(0, level - 10)) * 65))
+    this.worker.postMessage('setoption name UCI_Elo value ' + Math.max(1320,Math.min(2900,level*100)))
     this.worker.postMessage('setoption name MultiPV value ' + lines)
     this.worker.postMessage('position fen ' + fen)
     return new Promise((resolve, reject) => {
@@ -74,6 +90,8 @@ export class Engine {
   close() {
     this.closed = true
     this.pending?.resolve(null)
+    this.weakResolve?.(null)
+    this.beginner?.terminate()
     this.worker.terminate()
   }
 }

@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test'
 import { PerspectiveCamera, Vector3 } from 'three'
 
+test.beforeEach(async ({page}) => {
+  await page.addInitScript(() => {
+    if(!localStorage.getItem('evolution-settings')) localStorage.setItem('evolution-settings',JSON.stringify({reduced:true,quality:'low'}))
+  })
+})
+
 const choose2D = async page => {
   if (await page.locator('#webgl').isVisible()) await page.locator('#view-mode').click()
 }
@@ -8,12 +14,12 @@ const move = async (page,from,to) => {
   await page.locator('[data-square="'+from+'"]').click()
   await page.locator('[data-square="'+to+'"]').click()
 }
-const nav = (page,label) => page.getByRole('navigation').getByRole('button',{name:label,exact:true})
+const nav = (page,label) => page.locator('.main-nav').getByRole('button',{name:label,exact:true})
 
 test('3D match, 2D input, replay, and persistent customization',async ({page}) => {
   const errors = []
   page.on('pageerror',error=>errors.push(error.message))
-  await page.goto('/')
+  await page.goto('/?view=match')
   const canvas = page.locator('#webgl canvas')
   await expect(canvas).toBeVisible()
   const rect = await canvas.boundingBox()
@@ -38,8 +44,12 @@ test('3D match, 2D input, replay, and persistent customization',async ({page}) =
   await page.getByRole('button',{name:'Live position'}).click()
   await expect(page.locator('[data-square="e4"]')).toHaveAttribute('aria-label','e4 white Pawn')
   await nav(page,'Collection').click()
-  await page.getByLabel('Environment').selectOption('jade')
-  await page.getByLabel('White finish').selectOption('gold')
+  await page.getByRole('button',{name:'Environments',exact:true}).click()
+  await page.getByRole('searchbox',{name:'Search collection'}).fill('Zen')
+  await page.getByRole('button',{name:'Zen garden',exact:true}).click()
+  await page.getByRole('button',{name:'White pieces',exact:true}).click()
+  await page.locator('[data-edit=material]').selectOption('gold')
+  await page.getByRole('button',{name:'Saved presets',exact:true}).click()
   await page.getByLabel('Preset name').fill('Gold garden')
   await page.getByRole('button',{name:'Save preset'}).click()
   await page.reload()
@@ -49,7 +59,7 @@ test('3D match, 2D input, replay, and persistent customization',async ({page}) =
 
 test('Stockfish responds in a game and returns legal moves at all thirty levels',async ({page}) => {
   await page.goto('/')
-  await nav(page,'AI opponents').click()
+  await page.getByRole('button',{name:'Play vs AI'}).click()
   await page.getByLabel('Thinking time').selectOption('150')
   await page.getByRole('button',{name:'Start game'}).click()
   await choose2D(page)
@@ -103,6 +113,7 @@ test('private rooms sync moves, survive reload, and support draw and rematch',as
   await white.getByRole('button',{name:'Offer draw'}).click()
   await black.getByRole('button',{name:'Accept draw'}).click()
   await expect(white.locator('#status')).toContainText('Draw by agreement')
+  await Promise.all([white,black].map(page=>page.getByRole('button',{name:'Close',exact:true}).click()))
   await white.getByRole('button',{name:'Rematch',exact:true}).click()
   await black.getByRole('button',{name:'Rematch',exact:true}).click()
   await expect(black.locator('#status')).toContainText('White to move')
@@ -113,8 +124,7 @@ test('private rooms sync moves, survive reload, and support draw and rematch',as
 test('mobile board fits and solves a challenge',async ({page}) => {
   await page.setViewportSize({width:390,height:844})
   await page.goto('/')
-  await page.locator('#mobile-menu').click()
-  await nav(page,'Puzzles').click()
+  await page.getByRole('button',{name:'Puzzles',exact:true}).click()
   await page.getByRole('button',{name:/Back rank/}).click()
   await choose2D(page)
   await move(page,'e1','e8')
@@ -123,7 +133,7 @@ test('mobile board fits and solves a challenge',async ({page}) => {
 })
 
 test('variant controls and post-game engine review work',async ({page}) => {
-  await page.goto('/')
+  await page.goto('/?view=match')
   await choose2D(page)
   await page.getByRole('button',{name:'New game'}).click()
   await page.getByLabel('Rules').selectOption('fog')
@@ -140,7 +150,6 @@ test('variant controls and post-game engine review work',async ({page}) => {
   await move(page,'e7','e5')
   await page.getByRole('button',{name:'Resign',exact:true}).click()
   await page.getByRole('button',{name:'Confirm resignation'}).click()
-  await page.getByRole('button',{name:'Game info'}).click()
-  await page.getByRole('button',{name:'Analyze game'}).click()
+  await page.getByRole('button',{name:'Review game'}).click()
   await expect(page.locator('#analysis-progress')).toContainText('Evaluated 2 / 2')
 })

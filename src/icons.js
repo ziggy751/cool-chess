@@ -33,5 +33,17 @@ import icon31 from 'lucide-static/icons/wifi.svg?raw'
 import icon32 from 'lucide-static/icons/keyboard.svg?raw'
 import icon33 from 'lucide-static/icons/swords.svg?raw'
 import icon34 from 'lucide-static/icons/panel-left-close.svg?raw'
-const icons = {'crown':icon0,'gamepad-2':icon1,'users':icon2,'bot':icon3,'puzzle':icon4,'layers':icon5,'chart-no-axes-column-increasing':icon6,'settings':icon7,'chevron-down':icon8,'chevron-left':icon9,'chevron-right':icon10,'chevrons-left':icon11,'chevrons-right':icon12,'box':icon13,'grid-2x2':icon14,'rotate-ccw':icon15,'flip-vertical-2':icon16,'maximize':icon17,'flag':icon18,'handshake':icon19,'clock':icon20,'copy':icon21,'check':icon22,'arrow-up-right':icon23,'circle-help':icon24,'menu':icon25,'x':icon26,'plus':icon27,'chess-knight':icon28,'volume-2':icon29,'download':icon30,'wifi':icon31,'keyboard':icon32,'swords':icon33,'panel-left-close':icon34}
+import icon35 from 'lucide-static/icons/shuffle.svg?raw'
+import icon36 from 'lucide-static/icons/camera.svg?raw'
+import icon37 from 'lucide-static/icons/search.svg?raw'
+import icon38 from 'lucide-static/icons/star.svg?raw'
+import icon39 from 'lucide-static/icons/move.svg?raw'
+import icon40 from 'lucide-static/icons/sparkles.svg?raw'
+import icon41 from 'lucide-static/icons/play.svg?raw'
+import icon42 from 'lucide-static/icons/arrow-right.svg?raw'
+import icon43 from 'lucide-static/icons/panel-right-close.svg?raw'
+import icon44 from 'lucide-static/icons/sliders-horizontal.svg?raw'
+import icon45 from 'lucide-static/icons/expand.svg?raw'
+import icon46 from 'lucide-static/icons/house.svg?raw'
+const icons = {'crown':icon0,'gamepad-2':icon1,'users':icon2,'bot':icon3,'puzzle':icon4,'layers':icon5,'chart-no-axes-column-increasing':icon6,'settings':icon7,'chevron-down':icon8,'chevron-left':icon9,'chevron-right':icon10,'chevrons-left':icon11,'chevrons-right':icon12,'box':icon13,'grid-2x2':icon14,'rotate-ccw':icon15,'flip-vertical-2':icon16,'maximize':icon17,'flag':icon18,'handshake':icon19,'clock':icon20,'copy':icon21,'check':icon22,'arrow-up-right':icon23,'circle-help':icon24,'menu':icon25,'x':icon26,'plus':icon27,'chess-knight':icon28,'volume-2':icon29,'download':icon30,'wifi':icon31,'keyboard':icon32,'swords':icon33,'panel-left-close':icon34,'shuffle':icon35,'camera':icon36,'search':icon37,'star':icon38,'move':icon39,'sparkles':icon40,'play':icon41,'arrow-right':icon42,'panel-right-close':icon43,'sliders-horizontal':icon44,'expand':icon45,'house':icon46}
 export const icon = name => icons[name] || ""
