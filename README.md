@@ -27,7 +27,7 @@ For a Git-connected Worker, configure these build settings in Cloudflare:
 
 | Setting | Value |
 | --- | --- |
-| Production branch | `chess-evolution-3d` |
+| Production branch | `main` |
 | Root directory | `/` |
 | Build command | `npm run build` |
 | Deploy command | `npx wrangler deploy` |
