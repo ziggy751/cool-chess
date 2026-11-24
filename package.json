@@ -7,7 +7,9 @@
     "build": "vite build",
     "start": "node server/index.js",
     "test": "node --test tests/*.test.js",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "dev:cloudflare": "npm run build && wrangler dev --local",
+    "deploy": "npm run build && wrangler deploy"
   },
   "repository": {
     "type": "git",
@@ -34,7 +36,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "wrangler": "^4.167.0"
   },
   "private": true
 }

@@ -19,7 +19,24 @@ Open http://localhost:5173. Vite serves the client and forwards WebSocket connec
 
 Select **New game** for local rules and time controls. **AI opponents** offers 30 Stockfish settings with adjustable search time. **Multiplayer** creates an invitation, joins a room by code, or starts casual matchmaking. **Ranked** matches players with the same time control and shows the seasonal ladder. The camera control below the board switches between 3D and 2D without resetting play.
 
-## Production
+## Deploy to Cloudflare Workers
+
+The repository includes the `cool-chess` Worker configuration. The Worker serves the Vite build and routes `/socket` to a SQLite-backed Durable Object for multiplayer rooms, matchmaking, timers, and ranked ratings.
+
+For a Git-connected Worker, configure these build settings in Cloudflare:
+
+| Setting | Value |
+| --- | --- |
+| Production branch | `chess-evolution-3d` |
+| Root directory | `/` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+
+The Worker name in `wrangler.jsonc` matches the existing `cool-chess` service. For a manual deploy, authenticate Wrangler, then run `npm ci` and `npm run deploy`. Use `npm run dev:cloudflare` for a local Worker preview. With that preview running, run `CHESS_TEST_WS_URL=ws://127.0.0.1:8787/socket node --test tests/socket.test.js` to exercise the Worker WebSocket flow.
+
+Cloudflare stores rooms and ranked ratings in Durable Object storage, so active matches can resume after the object restarts. One Durable Object coordinates the current lobby and leaderboard.
+
+## Production on Node.js
 
 ```sh
 npm ci

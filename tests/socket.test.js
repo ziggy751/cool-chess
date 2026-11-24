@@ -7,12 +7,15 @@ import { join } from 'node:path'
 import { once } from 'node:events'
 import WebSocket from 'ws'
 
-test('production server validates moves, reconnects seats, and persists ranked results', {timeout:15000}, async () => {
+const workerUrl = process.env.CHESS_TEST_WS_URL
+
+test('server validates moves, reconnects seats, and persists ranked results', {timeout:15000}, async () => {
   const folder = await mkdtemp(join(tmpdir(),'chess-test-'))
   const path = join(folder,'ratings.json')
   const clients = []
   let server
   async function start() {
+    if (workerUrl) return workerUrl
     server = spawn(process.execPath,['server/index.js'],{env:{...process.env,PORT:'0',CHESS_RATINGS_PATH:path}})
     const [chunk] = await once(server.stdout,'data')
     return 'ws://127.0.0.1:'+String(chunk).trim().split(' ').at(-1)+'/socket'
@@ -38,7 +41,7 @@ test('production server validates moves, reconnects seats, and persists ranked r
   }
   async function stop() {
     for (const socket of clients.splice(0)) socket.terminate()
-    if (server.exitCode===null && server.signalCode===null) {
+    if (server && server.exitCode===null && server.signalCode===null) {
       server.kill()
       await once(server,'exit')
     }
@@ -89,10 +92,12 @@ test('production server validates moves, reconnects seats, and persists ranked r
     assert.equal((await restored.next('profile')).token,profile)
     restored.send({type:'ladder',division:'blitz'})
     const ladder = await restored.next('ladder')
-    assert.deepEqual(ladder.leaderboard.map(entry=>entry.rating),[1220,1180])
+    assert.ok(ladder.leaderboard.some(entry=>entry.name===ladder.player.name))
+    assert.equal(ladder.player.rating, first.color==='w'?1220:1180)
+    if (!workerUrl) assert.deepEqual(ladder.leaderboard.map(entry=>entry.rating),[1220,1180])
     assert.equal(ladder.player.games,1)
   } finally {
-    if (server) await stop()
+    await stop()
     await rm(folder,{recursive:true,force:true})
   }
 })
