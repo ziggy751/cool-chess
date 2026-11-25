@@ -14,11 +14,11 @@ import { opponentAt, bosses } from './opponents.js'
 import { Engine } from './engine.js'
 import { Online } from './online.js'
 import { collectionList } from './collections.js'
-import { environments } from './environments.js'
+import { locations, locationFor, tables, lightingStyles } from './worlds/catalog.js'
 import { showroom, cameras, movements, applyCollection } from './garage.js'
 import { freshLadder, rankOf, rateAI, ratedOpponent } from './ranked-ai.js'
 import { lessons } from './training.js'
-import { playSound, roomSound } from './sound.js'
+import { playSound, roomSound, updateRoomListener } from './sound.js'
 import { icon } from './icons.js'
 
 const $ = id => document.getElementById(id)
@@ -28,9 +28,10 @@ const read = (key,fallback) => {
   catch { return fallback }
 }
 const persist = (key,value) => localStorage.setItem('evolution-' + key,JSON.stringify(value))
-const defaults = {theme:'walnut',environment:'walnut',collection:'staunton',white:'ivory',black:'ebony',camera:'angled',quality:'high',
-  reduced:matchMedia('(prefers-reduced-motion: reduce)').matches, coords:true, autoQueen:false, volume:35, fov:0, frames:0, avatar:'G', motion:'glide',effect:'gold',overrides:{},cosmetics:true,reflections:true,shadows:true,particles:true,ambient:0,textureQuality:'auto',coach:true,premoves:true,rotate:false,confirm:false,highlight:'green',modelQuality:'high'}
+const defaults = {theme:'walnut',environment:'cabin',collection:'staunton',white:'ivory',black:'ebony',camera:'angled',quality:matchMedia('(pointer: coarse)').matches?'medium':'high',
+  reduced:matchMedia('(prefers-reduced-motion: reduce)').matches, coords:true, autoQueen:false, volume:35, fov:0, frames:0, avatar:'G', motion:'glide',effect:'gold',overrides:{},cosmetics:true,reflections:true,shadows:true,particles:true,ambient:0,textureQuality:'auto',coach:true,premoves:true,rotate:false,confirm:false,highlight:'green',modelQuality:'high',table:'auto',lighting:'natural',worldDetail:'auto',worldMotion:true,motionSpeed:'normal',motionIntensity:1,captureIntensity:1}
 const settings = {...defaults,...read('settings',{})}
+settings.environment=locationFor(settings.environment).id
 const button = (name, label, id, style = '') => '<button type="button" class="' + style + '" id="' + id + '" aria-label="' + label + '" title="' + label + '">' + icon(name) + '</button>'
 const action = (name,label,id,style = '') => '<button type="button" class="' + style + '" id="' + id + '">' + icon(name) + '<span>' + label + '</span></button>'
 
@@ -76,15 +77,30 @@ $('app').innerHTML = `
       <section class="game" aria-label="Chess game">
         <div id="opponent" class="player"></div>
         <div id="match-stage"><div class="stage" id="stage" data-theme="walnut">
-          <div class="stage-caption"><span></span><strong id="scene-name">Walnut club</strong></div>
-          <div id="weather" aria-hidden="true"></div>
+          <div class="stage-caption"><span></span><strong id="scene-name">Mountain Cabin</strong></div>
+
           <div id="webgl" aria-label="Interactive 3D chessboard"></div>
+          <div class="world-loading" aria-live="polite">Loading location…</div>
+          <div id="walk-controls" class="walk-controls" role="group" aria-label="Walk controls">
+            ${[['W','up','forward'],['A','left','left'],['S','down','back'],['D','right','right']].map(([key,direction,label])=>
+              `<button type="button" data-walk="Key${key}" aria-label="Walk ${label}">${icon('chevron-'+direction)}</button>`).join('')}
+          </div>
+          <div class="photo-bar" id="photo-bar" hidden aria-label="Photography controls">
+            <label>Field of view<input type="range" id="photo-fov" min="27" max="61" value="40"></label>
+            <label>Exposure<input type="range" id="photo-exposure" min=".5" max="1.7" step=".05" value="1.05"></label>
+            <label>Background blur<input type="range" id="photo-aperture" min="0" max="1" step=".05" value="0"></label>
+            <label>Focus distance<input type="range" id="photo-focus" min="1" max="30" step=".25" value="11"></label>
+            <label>Lighting<select id="photo-lighting"><option value="natural">Location</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="studio">Studio</option></select></label>
+            <label class="photo-check"><input type="checkbox" id="photo-freeze"> Pause scene</label>
+            ${action('camera','Capture','photo-save','primary')}
+            ${button('x','Exit photography','photo-close','icon-button')}
+          </div>
           <div id="flat" class="flat" hidden><div id="grid" role="group" aria-label="Chessboard"></div></div>
           <div class="view-controls" aria-label="Board controls">
             ${button('box','Switch between 2D and 3D','view-mode','view-button')}
             ${button('flip-vertical-2','Flip board','flip','view-button')}
             ${button('rotate-ccw','Reset camera','reset-camera','view-button')}
-            ${button('camera','Take photograph','photo','view-button')}
+            ${button('camera','Photography mode','photo','view-button')}
             ${button('sliders-horizontal','Camera and customization','quick','view-button')}
             ${button('maximize','Fullscreen board','fullscreen','view-button')}
           </div>
@@ -311,6 +327,7 @@ function playMove(move,confirmed=false) {
   let result
   try { result=local.move(move) }
   catch(error){toast(local.result?.reason || error.message);refreshLocal();return}
+  hasMatch=true
   if (fogged() || (settings.rotate && mode==='local')) {
     flipped = local.chess.turn() === 'b'
     resetCamera()
@@ -352,7 +369,11 @@ function selectSquare(square) {
     if (choices.length > 1 && !settings.autoQueen) {
       show('Pawn promotion','<div class="promotion" id="promotion"></div>')
       for (const move of choices) {
-        const choice = el('button','',glyph[move.promotion] + ' ' + pieces[move.promotion])
+        const choice=el('button','',pieces[move.promotion])
+        const preview=new Image()
+        preview.alt=''
+        preview.src='/piece-previews/'+move.promotion+'.webp'
+        choice.prepend(preview)
         choice.onclick = () => { $('dialog').close(); playMove({from,to:square,promotion:move.promotion}) }
         $('promotion').append(choice)
       }
@@ -391,7 +412,7 @@ function sound(frequency) {
   const kind=/glass|crystal|frost|phantom|sapphire|emerald/.test(material)?'glass':
     /gold|chrome|brass|titanium|carbon/.test(material)?'metal':/marble|stone|obsidian|ceramic/.test(material)?'stone':'wood'
   playSound(kind,settings.volume,frequency===105)
-  roomSound(settings.environment,settings.ambient)
+  roomSound(locationFor(settings.environment).id,settings.ambient)
 }
 
 function resetCamera() {
@@ -399,6 +420,7 @@ function resetCamera() {
 }
 
 function showScreen(next) {
+  closePhotography()
   if (screen==='studio') studio.close()
   screen=next
   for (const value of ['home','studio','match']) $(value+'-screen').hidden=value!==next
@@ -427,20 +449,10 @@ function applySettings() {
   stage.classList.toggle('is-flat',useFlat)
   stage.classList.toggle('no-coords',!settings.coords)
   const environment = (screen==='match' && mode==='boss' && bossTheme?.environment) || settings.environment
-  const [name,image,,weather] = environments[environment] || environments.walnut
+  const world=locationFor(environment)
+  roomSound(world.id,settings.ambient)
+  const {name}=world
   $('scene-name').textContent = name
-  const weatherLayer = $('weather')
-  if (weatherLayer.dataset.kind !== (weather || '')) {
-    weatherLayer.dataset.kind = weather || ''
-    weatherLayer.replaceChildren()
-    for (let i=0;weather && i<22;i++) {
-      const particle = el('i')
-      particle.style.cssText = '--x:'+(i*19%100)+'%;--y:'+(i*7%31)+'%;--delay:-'+(i*.317)+'s;--speed:'+(1+i%6*.42)+'s'
-      weatherLayer.append(particle)
-    }
-  }
-  stage.style.setProperty('--backdrop', "url('/" + image + ".webp')")
-  stage.dataset.sceneImage=image
   $('webgl').hidden = useFlat
   $('flat').hidden = !useFlat
   $('home-setup').textContent=(collectionList[settings.collection] || 'Staunton')+' · '+name
@@ -448,7 +460,6 @@ function applySettings() {
   $('view-mode').innerHTML = icon(flat ? 'grid-2x2' : 'box')
   document.documentElement.classList.toggle('reduce-motion',settings.reduced)
   const cosmetic = settings.cosmetics && !(screen==='match' && mode==='online' && onlineState?.division)
-  stage.classList.toggle('static-scene',!cosmetic || !settings.particles)
   if (board) {
     board.cosmetics=cosmetic
     board.geometryQuality=settings.modelQuality
@@ -458,11 +469,19 @@ function applySettings() {
     board.particles=settings.particles
     board.captureEffect=settings.effect
     board.moveStyle=settings.motion
+    board.motionSpeed=cosmetic?settings.motionSpeed:'instant'
+    board.motionIntensity=Number(settings.motionIntensity)
+    board.captureIntensity=Number(settings.captureIntensity)
+    board.environmentMotion=cosmetic && settings.worldMotion
+    board.roomListener=updateRoomListener
+    board.lightingStyle=settings.lighting
     board.highlight=settings.highlight
     board.reduced = settings.reduced
     board.engraving.visible = settings.coords && screen!=='home'
     board.setViewOptions(+settings.fov,+settings.frames)
     board.setQuality(settings.quality)
+    const detail=settings.worldDetail==='auto'?(settings.quality==='low'?'low':'high'):settings.worldDetail
+    if(!useFlat)board.setWorld(world.id,settings.table,detail,settings.lighting)
     board.setTheme((screen==='match' && mode==='boss' && bossTheme?.theme) || settings.theme,settings.white,settings.black,environment,settings.collection,settings.overrides)
   }
   renderBoard()
@@ -485,7 +504,7 @@ function renderBoard() {
   const masked = visibility ? {
     board:()=>chess.board().map(row=>row.map(piece=>piece && visibility.has(piece.square) ? piece : null)),
     get:square=>visibility.has(square) ? chess.get(square) : null,
-    turn:()=>chess.turn(),isCheck:()=>chess.isCheck(),
+    turn:()=>chess.turn(),isCheck:()=>chess.isCheck(),fen:()=>chess.fen(),
   } : chess
   const key = chess.fen()
   board?.render(masked,selected || pendingSquare || premove?.from,legal,last,key !== motionKey && moves.length === lastPly+1,visibility)
@@ -1159,6 +1178,8 @@ function settingsDialog() {
     <div class="list"><div class="two-fields"><label>Camera<select data-setting="camera">${options(Object.entries(cameras),settings.camera)}</select></label>
     <label>Graphics<select data-setting="quality">${options([['low','Performance'],['medium','Balanced'],['high','High'],['ultra','Ultra'],['photo','Cinematic'],['custom','Custom']],settings.quality)}</select></label></div>
     <label>Model quality<select data-setting="modelQuality">${options([['high','High'],['low','Performance']],settings.modelQuality)}</select></label>
+    <label>Environment detail<select data-setting="worldDetail">${options([['auto','Match graphics preset'],['low','Performance'],['high','Detailed']],settings.worldDetail)}</select></label>
+    <label class="toggle"><input type="checkbox" data-setting="worldMotion" ${settings.worldMotion?'checked':''}> Environment animation</label>
     <label>Walnut textures<select data-setting="textureQuality">${options([['auto','Match preset'],['low','Standard'],['2k','2K'],['4k','4K']],settings.textureQuality)}</select></label>
     <div class="settings-toggles">${[['coords','Board coordinates'],['autoQueen','Auto queen'],['reduced','Reduced motion'],['cosmetics','Animated materials'],['reflections','Reflections'],['shadows','Shadows'],['particles','Particles'],['coach','Move explanations'],['premoves','Premoves'],['rotate','Auto-rotate local board'],['confirm','Confirm casual moves']].map(([id,label])=>`<label class="toggle"><input type="checkbox" data-setting="${id}" ${settings[id]?'checked':''}> ${label}</label>`).join('')}</div>
     <div class="two-fields"><label>Field of view<input data-setting="fov" type="range" min="-6" max="18" value="${settings.fov}"></label>
@@ -1179,7 +1200,7 @@ function bindSettings() {
       applySettings()
       if (id==='ambient') {
         playSound('ui',Math.max(1,settings.volume)*.4)
-        setTimeout(()=>roomSound(settings.environment,settings.ambient),150)
+        setTimeout(()=>roomSound(locationFor(settings.environment).id,settings.ambient),150)
       }
     }
   })
@@ -1191,7 +1212,8 @@ function quickSettings() {
     <label>Camera<select data-setting="camera">${options(Object.entries(cameras),settings.camera)}</select></label>
     <label>Chessboard<select data-setting="theme">${options(Object.entries(themeList),settings.theme)}</select></label>
     <label>Piece set<select id="quick-set">${options(Object.entries(collectionList),settings.collection)}</select></label>
-    <label>Environment<select data-setting="environment">${options(Object.entries(environments).map(([id,[name]])=>[id,name]),settings.environment)}</select></label>
+    <label>Table<select data-setting="table">${options(Object.entries(tables),settings.table)}</select></label>
+    <label>Environment<select data-setting="environment">${options(Object.entries(locations).map(([id,{name}])=>[id,name]),settings.environment)}</select></label>
     <label>Animation<select data-setting="motion">${options(Object.entries(movements),settings.motion)}</select></label>
     <button class="secondary" id="quick-collection">Open showroom</button></div>`)
   bindSettings()
@@ -1199,32 +1221,65 @@ function quickSettings() {
   $('quick-collection').onclick=()=>{$('dialog').close();openStudio()}
 }
 
+function openPhotography() {
+  if (!board || $('webgl').hidden){toast('Switch to 3D to enter photography');return}
+  stage.classList.add('photo-mode')
+  $('photo-bar').hidden=false
+  $('photo-fov').value=board.camera.fov
+  $('photo-exposure').value=board.renderer.toneMappingExposure
+  $('photo-aperture').value=0
+  $('photo-focus').value=11
+  $('photo-lighting').value=settings.lighting
+  $('photo-freeze').checked=false
+  board.freezeWorld=false
+  board.photoAperture=0
+  board.reset('photo',flipped)
+  $('photo-bar').scrollIntoView({block:'nearest'})
+}
+function closePhotography() {
+  if(!stage.classList.contains('photo-mode'))return
+  stage.classList.remove('photo-mode')
+  $('photo-bar').hidden=true
+  board.freezeWorld=false
+  board.photoAperture=0
+  board.renderer.toneMappingExposure=1.05
+  resetCamera()
+  applySettings()
+}
+$('photo-close').onclick=closePhotography
+$('photo-save').onclick=photograph
+$('photo-freeze').onchange=()=>{board.freezeWorld=$('photo-freeze').checked}
+$('photo-fov').oninput=()=>{
+  board.camera.fov=Number($('photo-fov').value)
+  board.camera.updateProjectionMatrix()
+  board.dirty=true
+}
+$('photo-exposure').oninput=()=>{
+  board.renderer.toneMappingExposure=Number($('photo-exposure').value)
+  board.dirty=true
+}
+$('photo-lighting').onchange=()=>{
+  board.lightWorld(board.worldOptions.environment,$('photo-lighting').value)
+  board.dirty=true
+}
+for(const field of ['photo-aperture','photo-focus']){
+  $(field).oninput=()=>{
+    board.depthOfField(Number($('photo-aperture').value),Number($('photo-focus').value))
+      .catch(()=>toast('Depth of field is unavailable on this device'))
+  }
+}
+
 async function photograph() {
   if (!board || $('webgl').hidden) { toast('Switch to 3D to take a photograph');return }
   try {
     const blob=await board.photograph()
     if (!blob) throw new Error()
-    const overlay=await createImageBitmap(blob)
-    const backdrop=new Image()
-    backdrop.src='/'+stage.dataset.sceneImage+'.webp'
-    await backdrop.decode()
-    const canvas=document.createElement('canvas')
-    canvas.width=overlay.width;canvas.height=overlay.height
-    const ctx=canvas.getContext('2d')
-    const scale=Math.max(canvas.width/backdrop.width,canvas.height/backdrop.height)
-    const width=backdrop.width*scale,height=backdrop.height*scale
-    ctx.drawImage(backdrop,(canvas.width-width)/2,(canvas.height-height)*.46,width,height)
-    ctx.drawImage(overlay,0,0)
-    overlay.close()
-    canvas.toBlob(image=>{
-      if(!image)return
-      const url=URL.createObjectURL(image)
-      const link=document.createElement('a')
-      link.href=url
-      link.download='chess-evolution.png'
-      link.click()
-      setTimeout(()=>URL.revokeObjectURL(url),1000)
-    },'image/png')
+    const url=URL.createObjectURL(blob)
+    const link=document.createElement('a')
+    link.href=url
+    link.download='chess-evolution.png'
+    link.click()
+    setTimeout(()=>URL.revokeObjectURL(url),1000)
   } catch { toast('Could not save the photograph') }
 }
 
@@ -1372,11 +1427,22 @@ $('panel-toggle').onclick=()=>{
   match.classList.toggle('match-compact')
   $('panel-toggle').setAttribute('aria-pressed',String(match.classList.contains('match-compact')))
 }
-$('photo').onclick=photograph
+$('photo').onclick=openPhotography
 $('quick').onclick=quickSettings
 $('profile').onclick = stats
 $('connection').onclick = openOnline
 $('view-mode').onclick = () => { if (board) { flat = !flat; applySettings() } }
+for(const control of $('walk-controls').querySelectorAll('[data-walk]')){
+  const key=control.dataset.walk
+  control.onpointerdown=event=>{
+    if(!board)return
+    control.setPointerCapture(event.pointerId)
+    board.keys.add(key)
+  }
+  for(const type of ['pointerup','pointercancel','lostpointercapture']){
+    control.addEventListener(type,()=>board?.keys.delete(key))
+  }
+}
 $('flip').onclick = () => { flipped = !flipped; resetCamera(); render() }
 $('reset-camera').onclick = resetCamera
 $('fullscreen').onclick = () => {
@@ -1429,6 +1495,7 @@ document.addEventListener('keydown',event => {
     toast(cameras[settings.camera])
     return
   }
+  if(event.key==='Escape' && stage.classList.contains('photo-mode')){closePhotography();return}
   if(screen!=='match') return
   if(event.key==='Escape'){premove=null;pendingSquare=null;selected=null;drop=null;renderBoard();return}
   const target = {v:'view-mode',f:'flip',r:'reset-camera',ArrowLeft:'prev',ArrowRight:'next'}[event.key]
@@ -1450,7 +1517,7 @@ const studio=showroom($('studio-screen'),{
     else { board.showBoard(); if(board.mode==='specimen')resetCamera() }
   },
   onClose:()=>showScreen(studioReturn),
-  onPlay:()=>{ if(hasMatch)showScreen('match');else{showScreen('home');setup()} },
+  onPlay:()=>{ if(hasMatch || studioReturn==='match')showScreen('match');else{showScreen('home');setup()} },
   onDemo:kind=>{
     if(!board)return
     const chess=new Chess()
@@ -1466,7 +1533,8 @@ const studio=showroom($('studio-screen'),{
       board.render(chess,null,[],move,true)
     }
   },
-  onPhoto:photograph,
+  onCamera:pose=>board?.reset(pose,flipped),
+  onPhoto:openPhotography,
 })
 flat=!board || settings.camera==='flat'
 const matchLink = new URL(location.href).searchParams.get('view')==='match'

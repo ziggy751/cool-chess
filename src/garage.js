@@ -1,18 +1,20 @@
-import { environments } from './environments.js'
+import { locations, locationFor, tables, lightingStyles, curated } from './worlds/catalog.js'
 import { premiumCollections, collectionList, baseStyles } from './collections.js'
 import { finishList, pieces, palettes, themeList } from './board.js'
 import { icon } from './icons.js'
 
-export const movements={glide:'Classic glide',lift:'Smooth lift',cinematic:'Cinematic',teleport:'Teleport',
-  liquid:'Liquid transformation',hologram:'Holographic reconstruction',dissolve:'Crystal dissolve',mechanical:'Mechanical movement'}
-export const effects={none:'None',gold:'Gold dust',crystal:'Crystal shards',signal:'Signal pulse',ember:'Embers'}
+export const movements={auto:'Match the piece edition',glide:'Classic glide',lift:'Smooth lift',cinematic:'Cinematic',teleport:'Teleport',
+  liquid:'Liquid transformation',hologram:'Holographic reconstruction',dissolve:'Crystal dissolve',mechanical:'Mechanical movement',cosmic:'Cosmic trail',water:'Water glide',shadow:'Shadow transfer',royal:'Royal procession'}
+export const effects={none:'None',gold:'Gold dust',crystal:'Crystal shards',signal:'Signal pulse',ember:'Embers',auto:'Match the piece edition',cosmic:'Starlight',water:'Water droplets',clockwork:'Clockwork fragments',shadow:'Shadow motes'}
 export const cameras={flat:'Classic 2D',angled:'Standard 3D',low:'Cinematic',board:'Board-level',
-  close:'Close-up',orbit:'Free orbit',roam:'Free roam',showcase:'Automatic showcase',seated:'Seated',overhead:'Overhead'}
-const variants=[['sets','Piece sets'],['white','White pieces'],['black','Black pieces'],['theme','Chessboards'],
-  ['environment','Environments'],['motion','Animations'],['effect','Effects'],['presets','Saved presets']]
+  close:'Close-up',orbit:'Free orbit',roam:'Free roam',showcase:'Automatic showcase',seated:'Seated',overhead:'Overhead',photo:'Photography'}
+const variants=[['sets','Piece sets'],['environment','Environments'],['table','Tables'],['theme','Chessboards'],
+  ['white','White pieces'],['black','Black pieces'],['motion','Animations'],['effect','Effects'],['lighting','Lighting'],
+  ['view','Camera'],['curated','Curated setups'],['presets','Saved presets']]
+const motionSpeeds={instant:'Instant',fast:'Fast',normal:'Normal',cinematic:'Cinematic'}
 
 export const catalog = Object.fromEntries(Object.entries(premiumCollections).map(([key,collection])=>[key,collection]))
-export const styleKeys = ['theme','environment','collection','white','black','overrides','motion','effect']
+export const styleKeys = ['theme','environment','collection','white','black','overrides','motion','effect','table','lighting','motionSpeed','motionIntensity','captureIntensity']
 export const applyCollection = (settings,id) => {
   const edition=catalog[id]
   Object.assign(settings,{collection:id,white:edition?.white || 'ivory',black:edition?.black || 'ebony',overrides:{}})
@@ -21,8 +23,12 @@ export const getStyle = settings => Object.fromEntries(styleKeys.map(key=>[key,s
 
 const entries = {
   sets:Object.entries(catalog).map(([id,item])=>({id,label:item.label,category:item.category,image:'/catalog/'+id+'.webp'})),
-  theme:Object.entries(themeList).map(([id,label])=>({id,label,category:palettes[id][4]?'animated':'classic',palette:palettes[id]})),
-  environment:Object.entries(environments).map(([id,[label,image,arg,weather]])=>({id,label,category:weather?'weather':'still',image:'/'+image+'.webp'})),
+  theme:Object.entries(themeList).map(([id,label])=>({id,label,category:palettes[id][4]?'animated':'classic',image:'/board-previews/'+id+'.webp'})),
+  environment:Object.values(locations).map(({id,name,category,preview})=>({id,label:name,category,image:preview,animated:true})),
+  table:Object.entries(tables).map(([id,label])=>({id,label,image:id==='auto'?locations.cabin.preview:'/table-previews/'+id+'.webp'})),
+  lighting:Object.entries(lightingStyles).map(([id,label])=>({id,label})),
+  view:Object.entries(cameras).filter(([id])=>id!=='flat').map(([id,label])=>({id,label})),
+  curated:Object.entries(curated).map(([id,setup])=>({id,label:setup.name,image:locations[setup.environment].preview,setup})),
   motion:Object.entries(movements).map(([id,label])=>({id,label})),
   effect:Object.entries(effects).map(([id,label])=>({id,label})),
 }
@@ -32,8 +38,9 @@ const ic = (symbol,label,id) => `<button type="button" class="icon-button" id="$
 const allFinishes=Object.fromEntries(finishList.map(finish=>[finish,finish.replace(/^./,c=>c.toUpperCase())]))
 const upper = id => id[0].toUpperCase()+id.slice(1)
 
-export function showroom(host,{settings,defaults,read,persist,onChange,onInspect,onPlay,onClose,onDemo,onPhoto,toast}) {
+export function showroom(host,{settings,defaults,read,persist,onChange,onInspect,onPlay,onClose,onDemo,onPhoto,onCamera,toast}) {
   let tab='sets', category='all', selection='n', target='piece', cameraBoard=true, showing=false
+  let previousStyle,view='orbit',activeCurated
   let favorite=new Set(read('favorites',[]))
   let recent=read('recent-items',[])
   let presets=read('presets',[])
@@ -48,8 +55,10 @@ export function showroom(host,{settings,defaults,read,persist,onChange,onInspect
     <nav class="studio-tabs" aria-label="Collection tabs">${variants.map(([id,label])=>`<button type="button" data-studio-tab="${id}">${label}</button>`).join('')}</nav>
     <div class="studio-grid">
       <div class="studio-display"><div id="studio-stage"></div><div class="studio-display-bar">
-        <span id="studio-caption"></span><span class="studio-gesture">Right-drag to orbit · Scroll to zoom</span>
-        ${ic('camera','Save photograph','studio-photo')}
+        <span id="studio-caption"></span><span class="studio-gesture">Right-drag to look · Scroll to zoom</span>
+        <button type="button" class="icon-button" id="studio-explore" title="Explore location">${icon('move')}</button>
+        <button type="button" class="icon-button" id="studio-compare" title="Compare last setup" disabled>${icon('layers')}</button>
+        ${ic('camera','Photography mode','studio-photo')}
       </div></div>
       <aside class="studio-catalog"><div id="studio-content"></div></aside>
     </div>`
@@ -63,18 +72,36 @@ export function showroom(host,{settings,defaults,read,persist,onChange,onInspect
     const pick=array=>array[Math.floor(Math.random()*array.length)]
     applyCollection(settings,pick(Object.keys(catalog)))
     settings.theme=pick(Object.keys(themeList))
-    settings.environment=pick(Object.keys(environments))
+    settings.environment=pick(Object.keys(locations))
     update()
     draw()
   }
   $('studio-close').onclick=onClose
   $('studio-play').onclick=onPlay
   $('studio-photo').onclick=onPhoto
+  $('studio-explore').setAttribute('aria-label','Explore location')
+  $('studio-explore').onclick=()=>{
+    cameraBoard=true
+    view=view==='roam'?'orbit':'roam'
+    onInspect(null)
+    onCamera(view)
+    $('studio-explore').setAttribute('aria-pressed',String(view==='roam'))
+  }
+  $('studio-compare').setAttribute('aria-label','Compare last setup')
+  $('studio-compare').onclick=()=>{
+    if(!previousStyle)return
+    const current=getStyle(settings)
+    Object.assign(settings,previousStyle)
+    previousStyle=current
+    update()
+    draw()
+  }
   host.querySelectorAll('[data-studio-tab]').forEach(button=>{button.onclick=()=>{
     tab=button.dataset.studioTab
     category='all'
     target='piece'
     cameraBoard=!['white','black'].includes(tab)
+    if(tab!=='view' && view==='photo')view='orbit'
     draw()
     inspect()
   }})
@@ -83,18 +110,35 @@ export function showroom(host,{settings,defaults,read,persist,onChange,onInspect
     const side=tab==='white'?'w':'b'
     const preview=!cameraBoard && ['white','black'].includes(tab)
     $('studio-caption').textContent=preview ? (side==='w'?'White ':'Black ')+pieces[selection] :
-      collectionList[settings.collection]+' · '+themeList[settings.theme]
+      locationFor(settings.environment).name+' · '+themeList[settings.theme]
     onInspect(preview ? selection : null,side)
+    if(!preview && (tab==='view' || view==='roam'))onCamera(view)
+    $('studio-compare').disabled=!previousStyle
   }
   function update() {
+    settings.environment=locationFor(settings.environment).id
     persist('settings',settings)
     onChange()
     inspect()
   }
   function apply(item) {
     const id=item.id
-    if (tab==='sets') applyCollection(settings,id)
-    else settings[tab]=id
+    if(tab==='view'){
+      view=id
+      onCamera(view)
+      return
+    }
+    previousStyle=getStyle(settings)
+    if (tab==='sets') {
+      applyCollection(settings,id)
+      if(catalog[id].motion)Object.assign(settings,{motion:'auto',effect:'auto'})
+    }
+    else if(tab==='curated'){
+      const {environment,theme,collection}=item.setup
+      applyCollection(settings,collection)
+      Object.assign(settings,{environment,theme,table:'auto',lighting:'natural',motion:'auto',effect:'auto'})
+      activeCurated=id
+    }else settings[tab]=id
     const key=tab+':'+id
     recent=[key,...recent.filter(value=>value!==key)].slice(0,40)
     persist('recent-items',recent)
@@ -107,18 +151,33 @@ export function showroom(host,{settings,defaults,read,persist,onChange,onInspect
     if (tab==='white' || tab==='black') return editor()
     const panel=$('studio-content')
     const items=entries[tab]
-    const selected=()=>tab==='sets'?settings.collection:settings[tab]
+    const selected=()=>{
+      if(tab==='sets')return settings.collection
+      if(tab==='view')return view
+      if(tab==='curated')return activeCurated
+      return settings[tab]
+    }
     const categories=[...new Set(items.flatMap(item=>item.category?[item.category]:[]))]
     panel.innerHTML=`<div class="catalog-controls">
       <label class="catalog-search">${icon('search')}<input id="catalog-query" type="search" aria-label="Search collection" placeholder="Search"></label>
-      <select id="catalog-filter" aria-label="Filter collection">${optionList({all:'All items',favorites:'Favourites',recent:'Recently used',...Object.fromEntries(categories.map(id=>[id,upper(id)]))},category)}</select></div>
+      <select id="catalog-filter" aria-label="Filter collection">${optionList({all:'All items',favorites:'Favourites',recent:'Recently used',...(tab==='environment'?{animated:'Animated'}:{}),...Object.fromEntries(categories.map(id=>[id,upper(id)]))},category)}</select></div>
       <div class="catalog-track"><span id="catalog-count"></span><div>${ic('chevron-left','Previous item','item-back')}${ic('chevron-right','Next item','item-forward')}</div></div>
+      ${tab==='motion'||tab==='effect'?`<div class="motion-panel">
+        ${tab==='motion'?`<select id="motion-speed" aria-label="Animation speed">${optionList(motionSpeeds,settings.motionSpeed)}</select>`:''}
+        <label>${tab==='motion'?'Move intensity':'Capture intensity'}<input id="effect-strength" type="range" min="0" max="1.2" step=".05" value="${tab==='motion'?settings.motionIntensity:settings.captureIntensity}"></label>
+        <button type="button" class="secondary" id="motion-demo">Demo</button></div>`:''}
       <div id="catalog-items" class="catalog-items"></div>`
+    if($('motion-speed'))$('motion-speed').onchange=()=>{settings.motionSpeed=$('motion-speed').value;update();onDemo(tab)}
+    if($('effect-strength'))$('effect-strength').onchange=()=>{
+      settings[tab==='motion'?'motionIntensity':'captureIntensity']=Number($('effect-strength').value)
+      update();onDemo(tab)
+    }
+    if($('motion-demo'))$('motion-demo').onclick=()=>onDemo(tab)
     const filter=()=>items.filter(item=>{
       const key=tab+':'+item.id
       const search=$('catalog-query').value.trim().toLowerCase()
       return item.label.toLowerCase().includes(search) && (category==='all'
-        || category==='favorites' && favorite.has(key) || category==='recent' && recent.includes(key) || item.category===category)
+        || category==='favorites' && favorite.has(key) || category==='recent' && recent.includes(key) || category==='animated' && item.animated || item.category===category)
     })
     function cards() {
       const list=filter()
@@ -139,15 +198,9 @@ export function showroom(host,{settings,defaults,read,persist,onChange,onInspect
           img.alt=''
           img.loading='lazy'
           preview.append(img)
-        } else if (item.palette) {
-          const board=mk('span','catalog-board')
-          board.style.setProperty('--tile-a',item.palette[0])
-          board.style.setProperty('--tile-b',item.palette[1])
-          board.style.setProperty('--frame',item.palette[2])
-          preview.append(board)
         } else {
           preview.classList.add('catalog-symbol')
-          preview.innerHTML=icon(tab==='motion'?'move':'sparkles')
+          preview.innerHTML=icon(tab==='motion'?'move':tab==='view'?'camera':'sparkles')
         }
         pick.append(preview,mk('span','catalog-name',item.label))
         pick.onclick=()=>{
@@ -264,7 +317,7 @@ export function showroom(host,{settings,defaults,read,persist,onChange,onInspect
     }
   }
   return {
-    open(){showing=true;draw();inspect()},
+    open(){showing=true;view='orbit';draw();inspect()},
     close(){showing=false},
   }
 }

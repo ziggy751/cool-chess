@@ -1,5 +1,8 @@
 import * as THREE from 'three'
-import { environments } from './environments.js'
+import { immersiveEditions } from './worlds/chess-editions.js'
+import { pieceComponents, stepComponents } from './worlds/piece-components.js'
+import { locationFor } from './worlds/catalog.js'
+import { classicBoardNames } from './classic-board-names.js'
 import { animateSurface } from './surfaces.js'
 import { profileFor, premiumCollections } from './collections.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -260,12 +263,19 @@ export const palettes = {
   bullion:['#d6ae62','#4e3f32','#342820','marble','celestial'],
   'gold-vein':['#d0b98d','#3b3437','#29252b','marble','marble'],
   projection:['#75a7c2','#293f63','#1c304b','carbon','hologram'],
-
+  'aurora-glass':['#9accb3','#35485d','#2b3a52','marble','ribbons'],
+  emerald:['#9ab99a','#285744','#24463a','stone','spectrum'],
+  'woven-carbon':['#9893a1','#373746','#28292e','carbon','grid'],
+  solar:['#d9ad6f','#673b37','#372924','stone','sunspots'],
+  ink:['#aea6b5','#403743','#292733','marble','ink'],
+  sapphire:['#8aa9df','#344b7b','#243854','marble','water'],
 }
-export const themeList = {...Object.fromEntries(Object.entries(environments).map(([id,[label]])=>[id,label])),
+export const themeList = {...classicBoardNames,
   liquid:'Liquid metal',lava:'Volcanic basalt',glacier:'Frozen crystal',galaxy:'Cosmic galaxy',
   machine:'Mechanical grid',water:'Water glass',energy:'Neon energy',bullion:'Animated gold',
-  'gold-vein':'Gold-veined marble',projection:'Holographic grid'}
+  'gold-vein':'Gold-veined marble',projection:'Holographic grid',
+  'aurora-glass':'Aurora glass',emerald:'Emerald crystal','woven-carbon':'Woven carbon',
+  solar:'Solar flare',ink:'Ink shadow',sapphire:'Sapphire tide'}
 
 export const finishes = {
   ivory: [0xd4b992,.02,.34], ebony: [0x2b1e1c,.20,.25], gold: [0xdcad50,.85,.22],
@@ -291,6 +301,12 @@ export const finishes = {
   'midnight hologram':[0x29465d,.35,.18,null,.4,'hologram'],
 
 }
+for(const [id,edition] of Object.entries(immersiveEditions)){
+  const {color,metal,rough,glass,pattern}=edition
+  const map=id==='living-wood'?'wood':id==='dragonstone'?'stone':null
+  finishes[id]=[color,metal,rough,map,glass,pattern]
+  finishes[id+' dark']=[new THREE.Color(color).multiplyScalar(.26).getHex(),metal,rough,map,glass*.64,pattern]
+}
 export const finishList = Object.keys(finishes)
 
 export class Board {
@@ -302,7 +318,7 @@ export class Board {
     this.keys = new Set()
     this.pointers=new Set()
     this.keyboard = event => {
-      if (this.mode!=='roam' || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || document.querySelector('dialog[open]')) return
+      if (!['roam','photo'].includes(this.mode) || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || document.querySelector('dialog[open]')) return
       if (/^Key[WASD]$/.test(event.code)) {
         event.preventDefault()
         if (event.type==='keydown') this.keys.add(event.code)
@@ -329,7 +345,7 @@ export class Board {
     room.dispose()
     pmrem.dispose()
     host.append(this.renderer.domElement)
-    this.camera = new THREE.PerspectiveCamera(40,1,.1,100)
+    this.camera = new THREE.PerspectiveCamera(40,1,.1,155)
     this.controls = new OrbitControls(this.camera,this.renderer.domElement)
     this.controls.enableDamping = true
     this.controls.enablePan = true
@@ -351,7 +367,8 @@ export class Board {
     key.shadow.bias = -.0002
     key.shadow.normalBias = .008
     key.shadow.radius = 3
-    this.scene.add(key,new THREE.HemisphereLight(0xffebdd,0x433744,.86))
+    this.fill=new THREE.HemisphereLight(0xffebdd,0x443b48,1.12)
+    this.scene.add(key,this.fill)
     this.table = new THREE.Group()
     this.scene.add(this.table)
     const base = (size,y,color,depth,bevel = .012) => {
@@ -360,14 +377,6 @@ export class Board {
       mesh.receiveShadow = true
       this.table.add(mesh)
       return mesh
-    }
-    this.furniture = base(10.7,-.49,0x3e2c25,.21,.04)
-    const legs=new THREE.BoxGeometry(.32,2.9,.32)
-    for (const x of [-4.8,4.8]) for (const z of [-4.8,4.8]) {
-      const leg=new THREE.Mesh(legs,this.furniture.material)
-      leg.position.set(x,-1.94,z)
-      leg.receiveShadow=true
-      this.table.add(leg)
     }
     this.frame = base(8.88,-.148,0x3b241a,.46,.055)
     base(8.93,-.279,0x4e3221,.065,.018)
@@ -424,26 +433,50 @@ export class Board {
     this.solitaire = new THREE.Group()
     this.solitaire.visible = false
     this.scene.add(this.solitaire)
-    this.pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.16,.21,64),
+    this.pedestal = new THREE.Mesh(new THREE.CylinderGeometry(.95,1.29,3.49,64),
       new THREE.MeshPhysicalMaterial({color:0x272927,metalness:.62,roughness:.34}))
-    this.pedestal.position.y=-.115
+    this.pedestal.position.y=-1.77
     this.pedestal.receiveShadow=true
     this.solitaire.add(this.pedestal)
     this.accentGeometry = new THREE.TorusGeometry(.245,.017,8,48).rotateX(Math.PI/2)
     this.engravings = new Map()
     this.setTheme('walnut','ivory','ebony')
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(45,45),new THREE.ShadowMaterial({ opacity:.48 }))
-    plane.rotation.x = -Math.PI/2
-    plane.position.y = -.37
-    plane.receiveShadow = true
-    this.scene.add(plane)
     this.ray = new THREE.Raycaster()
+    const surface=this.renderer.domElement
+    surface.addEventListener('contextmenu',event=>event.preventDefault())
+    surface.addEventListener('wheel',event=>{
+      if(!this.lookMode())return
+      event.preventDefault()
+      this.camera.fov=THREE.MathUtils.clamp(this.camera.fov+event.deltaY*.036,24,70)
+      this.camera.updateProjectionMatrix()
+      this.dirty=true
+    },{passive:false})
+    surface.addEventListener('pointerdown',event=>{
+      if(!this.lookMode())return
+      if(event.button===2 || (this.mode==='roam' && event.button===0) || (event.pointerType==='touch' && !event.isPrimary)){
+        this.down=null
+        this.dragEntry=null
+        this.lookDrag={id:event.pointerId,x:event.clientX,y:event.clientY}
+        surface.setPointerCapture(event.pointerId)
+      }
+    })
+    surface.addEventListener('pointermove',event=>{
+      if(this.lookDrag?.id!==event.pointerId)return
+      this.yaw-=(event.clientX-this.lookDrag.x)*.0043
+      this.pitch=THREE.MathUtils.clamp(this.pitch-(event.clientY-this.lookDrag.y)*.0038,-1.33,1.28)
+      this.lookDrag.x=event.clientX
+      this.lookDrag.y=event.clientY
+      this.updateLook()
+    })
+    for(const type of ['pointerup','pointercancel','lostpointercapture']){
+      surface.addEventListener(type,event=>{if(this.lookDrag?.id===event.pointerId)this.lookDrag=null})
+    }
     this.renderer.domElement.addEventListener('pointerdown', event => {
       if (event.pointerType==='touch') {
         this.pointers.add(event.pointerId)
         if(this.pointers.size>1){this.down=null;this.dragEntry=null;return}
       }
-      if (event.button!==0 || this.preview || this.mode==='roam') return
+      if (event.button!==0 || this.preview || ['roam','photo'].includes(this.mode) || this.lookDrag) return
       this.renderer.domElement.setPointerCapture(event.pointerId)
       this.down = { x:event.clientX,y:event.clientY,square:this.hit(event) }
     })
@@ -470,7 +503,7 @@ export class Board {
     })
     this.renderer.domElement.addEventListener('pointercancel',event=>{this.pointers.delete(event.pointerId);this.down=null;this.dragEntry=null})
     this.renderer.domElement.addEventListener('dblclick',event=>{
-      if (this.solitaire.visible) return
+      if (this.lookMode() || this.solitaire.visible) return
       const entry=this.stones.get(this.hit(event))
       if (!entry || this.preview) return
       this.focus = {target:entry.target.clone().add(new THREE.Vector3(0,.58,0)),
@@ -486,12 +519,13 @@ export class Board {
         this.camera.fov = (this.camera.aspect < 1.10 ? 46 : 40)+(this.fovOffset || 0)
         this.camera.updateProjectionMatrix()
         this.renderer.setSize(w,h)
+        this.photoComposer?.setSize(w,h)
       }
     })
     this.resize.observe(host)
     this.setQuality('low')
     this.renderer.setAnimationLoop(time => {
-      const frameLimit=this.frameLimit || (this.preview?36:0)
+      const frameLimit=this.frameLimit || (this.preview?36:this.quality==='low'?45:0)
       if (frameLimit && time-(this.lastFrame || 0)<1000/frameLimit-2) return
       if (!host.clientWidth || !host.clientHeight) return
       if (this.showcase && !this.reduced && !this.backdropPaused) this.controls.autoRotate = true
@@ -499,16 +533,28 @@ export class Board {
       const elapsed = Math.min(.05,(time-(this.previousTime || time))/1000)
       this.previousTime=time
       if (!this.backdropPaused) this.time.value = this.reduced || !this.cosmetics ? 0 : time*.001
-      if (this.mode==='roam') this.moveCamera(elapsed)
+      if (this.mode==='roam' || this.mode==='photo') this.moveCamera(elapsed)
       if (this.focus) {
         this.controls.target.lerp(this.focus.target,.115)
         this.camera.position.lerp(this.focus.camera,.115)
         if (this.camera.position.distanceToSquared(this.focus.camera)<.002) this.focus=null
       }
-      const cameraMoved = this.controls.update(elapsed)
+      const cameraMoved = this.controls.enabled && this.controls.update(elapsed)
+      const worldAnimated=this.world?.tick(elapsed,this.environmentMotion!==false && !this.reduced && !this.backdropPaused && !this.freezeWorld)
+      if(this.world?.room && this.reflections!==false && this.quality!=='low' && (!this.preview || this.quality!=='medium')){
+        const excluded=[this.table,this.solitaire,...[...this.stones.values()].map(value=>value.mesh),
+          ...this.departing.map(value=>value.mesh),...this.effects.map(value=>value.burst)]
+        if(this.world.capture(time,excluded,this.environmentMotion!==false?this.quality:'high')){
+          this.scene.environment=this.world.target.texture
+          this.scene.environmentIntensity=.78
+          this.dirty=true
+        }
+      }
       this.constrainCamera()
+      if(this.lookMode())this.roomListener?.(this.camera.position,this.yaw,time)
       if (this.solitaire.visible && !this.reduced) {
         this.soloMesh.rotation.y += elapsed*.32
+        if(this.cosmetics)stepComponents(this.soloMesh.userData.components,this.time.value)
         if (this.soloMesh.userData.gear && this.cosmetics) this.soloMesh.userData.gear.rotation.y+=elapsed*1.1
         this.dirty=true
       }
@@ -527,6 +573,7 @@ export class Board {
       let moving = false
       for (const entry of this.stones.values()) {
         if (this.dragEntry===entry) continue
+        if(this.cosmetics && !this.reduced)stepComponents(entry.mesh.userData.components,this.time.value,Boolean(entry.flight))
         if (entry.mesh.userData.gear && this.cosmetics && !this.reduced) entry.mesh.userData.gear.rotation.y+=elapsed*.74
         const flight = entry.flight
         if (flight && !this.reduced) {
@@ -534,12 +581,16 @@ export class Board {
           const eased=t*t*(3-2*t)
           entry.mesh.position.lerpVectors(flight.from,entry.target,flight.style==='teleport' ? Number(t>.44) : eased)
           entry.mesh.position.y+=Math.sin(Math.PI*t)*flight.height
-          entry.mesh.scale.setScalar(1-flight.shrink*Math.sin(Math.PI*t))
-          if (t===1) entry.flight=null
+          const pulse=Math.sin(Math.PI*t)
+          const factor=1-flight.shrink*pulse
+          entry.mesh.scale.set(factor,flight.style==='liquid'?1+pulse*.43:factor,factor)
+          if(flight.style==='mechanical')entry.mesh.rotation.y=flight.angle+Math.sin(t*9)*.062*pulse
+          if(flight.style==='water')entry.mesh.rotation.y=flight.angle+pulse*.24
+          if (t===1) {entry.flight=null;entry.mesh.scale.setScalar(1)}
           else moving=true
         } else {
           entry.mesh.scale.setScalar(1)
-          if (this.reduced) entry.mesh.position.copy(entry.target)
+          if (this.reduced || this.motionSpeed==='instant') entry.mesh.position.copy(entry.target)
           else if (entry.mesh.position.distanceToSquared(entry.target)>.00001) {
             entry.mesh.position.lerp(entry.target,.27)
             moving=true
@@ -547,9 +598,9 @@ export class Board {
         }
       }
       if (this.effects.length) this.updateEffects(time)
-      if (this.dirty || cameraMoved || moving || this.wasMoving || (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)) {
+      if (this.dirty || cameraMoved || worldAnimated || moving || this.wasMoving || (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)) {
         this.lastFrame = time
-        this.renderer.render(this.scene,this.camera)
+        this.renderFrame()
         this.dirty = false
       }
       this.wasMoving = moving
@@ -587,6 +638,11 @@ export class Board {
 
   useLighting(quality) {
     this.wantsHDR=quality!=='low' && this.reflections!==false
+    if(this.world?.room){
+      this.scene.environment=this.wantsHDR && this.world.target && !this.world.pendingProbe?this.world.target.texture:this.roomLighting
+      this.scene.environmentIntensity=this.wantsHDR?.78:.38
+      return
+    }
     this.scene.environment=this.wantsHDR && this.hdrLighting || this.roomLighting
     this.scene.environmentIntensity=this.scene.environment===this.roomLighting?.58:.49
     if(!this.wantsHDR || this.hdrLighting || this.loadingHDR) return
@@ -597,7 +653,7 @@ export class Board {
       generator.dispose()
       texture.dispose()
       this.loadingHDR=false
-      if(this.wantsHDR) {
+      if(this.wantsHDR && !this.world?.room) {
         this.scene.environment=this.hdrLighting
         this.scene.environmentIntensity=.49
         this.dirty=true
@@ -624,6 +680,11 @@ export class Board {
     const shadow = this.shadows===false ? 0 : defaultShadow
     const pixelRatio=Math.min(devicePixelRatio,this.preview?Math.min(1.25,ratio):ratio)
     if(this.renderer.getPixelRatio()!==pixelRatio)this.renderer.setPixelRatio(pixelRatio)
+    const photoRatio=quality==='low'?Math.min(pixelRatio,.65):pixelRatio
+    if(this.photoComposer && this.photoPixelRatio!==photoRatio){
+      this.photoPixelRatio=photoRatio
+      this.photoComposer.setPixelRatio(photoRatio)
+    }
     this.renderer.shadowMap.enabled = shadow > 0
     if (shadow && this.key.shadow.mapSize.x !== shadow) {
       this.key.shadow.map?.dispose()
@@ -682,18 +743,13 @@ export class Board {
       material.roughness = type==='marble' ? .29 : .51
       material.needsUpdate = true
     })
-    this.furniture.material.map=textureFor('wood')
-    this.furniture.material.roughness=.68
-    this.furniture.material.bumpMap=textureFor('wood')
-    this.furniture.material.bumpScale=.009
-    this.furniture.material.needsUpdate=true
     this.frame.material.map = textureFor(type)
     this.frame.material.bumpMap = textureFor(type)
     this.frame.material.bumpScale = .008
     this.frame.material.needsUpdate = true
     this.frame.material.color.set(frame)
     this.rim.material.color.set(frame).multiplyScalar(1.65)
-    this.key.color.setHex((environments[environment] || environments.walnut)[2])
+    this.lightWorld(environment,this.lightingStyle)
     ;[white,black].forEach((finish,i)=>this.styleMaterial(this.materials[i],finish,i))
     for (const [key,material] of this.detailMaterials) {
       const [side,type]=key.split(':')
@@ -748,6 +804,12 @@ export class Board {
     pad.position.y=.003
     if (type==='p') pad.scale.set(.82,1,.82)
     group.add(model,pad)
+    if(immersiveEditions[spec.collection]){
+      const component=pieceComponents(immersiveEditions[spec.collection],type)
+      group.add(component.rotor)
+      group.userData.components=component
+      this.animated=true
+    }
     if (spec.secondary || spec.collection==='mechanical') {
       const key=color+':'+type
       if (!this.accentMaterials.has(key)) {
@@ -790,6 +852,52 @@ export class Board {
     return group
   }
 
+  async setWorld(environment,table,detail,lighting) {
+    const profile=locationFor(environment)
+    this.worldOptions={environment:profile.id,table,detail,lighting}
+    const signature=profile.id+':'+detail
+    this.worldRequest ||= import('./worlds/runtime.js').then(({WorldStage})=>{
+      this.world=new WorldStage(this.scene,this.renderer,active=>{
+        const options=this.worldOptions
+        if(options.environment!==active)return
+        this.lightWorld(active,options.lighting)
+        this.world.table(options.table,options.detail)
+        if(this.world.furniture)this.world.furniture.root.visible=!this.solitaire.visible
+        this.useLighting(this.quality)
+        this.host.dataset.world=active
+        this.host.dataset.worldState='ready'
+        this.dirty=true
+      })
+      return this.world
+    })
+    if(this.world?.signature!==signature)this.host.dataset.worldState='loading'
+    const world=await this.worldRequest
+    if(this.worldOptions.environment!==profile.id || this.worldOptions.detail!==detail)return
+    if(world.signature===signature && world.room && world.profile.id===profile.id && world.detail===detail){
+      world.table(table,detail)
+      if(world.furniture)world.furniture.root.visible=!this.solitaire.visible
+      this.lightWorld(profile.id,lighting)
+      this.dirty=true
+      return
+    }
+    try { await world.load(profile.id,detail) }
+    catch(error){
+      if(this.worldOptions.environment===profile.id)this.host.dataset.worldState='error'
+      console.error('Could not load 3D location',error)
+    }
+  }
+
+  lightWorld(environment,setting='natural') {
+    this.lightingStyle=setting
+    const profile=locationFor(environment)
+    const tint={warm:0xffc697,cool:0x9acbff,studio:0xf4eee7}[setting] || profile.light
+    this.key.color.setHex(tint)
+    this.key.position.set(environment==='neon'?-9:-6,12,-12)
+    this.key.intensity=setting==='studio'?3.08:environment==='cabin'?2.63:environment==='neon'?2.51:2.68
+    this.fill.color.setHex(profile.light)
+    this.fill.intensity=environment==='neon'||environment==='orbit'?1.12:1.44
+  }
+
   inspectPiece(type='n',color='w') {
     if (this.soloMesh) this.solitaire.remove(this.soloMesh)
     this.soloMesh=this.createPiece(type,color,this.spec(type,color))
@@ -797,6 +905,7 @@ export class Board {
     this.solitaire.add(this.soloMesh)
     this.solitaire.visible=true
     this.table.visible=false
+    if(this.world?.furniture)this.world.furniture.root.visible=false
     for (const entry of this.stones.values()) entry.mesh.visible=false
     if (this.mode!=='specimen') this.reset('specimen')
     this.dirty=true
@@ -805,38 +914,50 @@ export class Board {
   showBoard() {
     this.solitaire.visible=false
     this.table.visible=true
+    if(this.world?.furniture)this.world.furniture.root.visible=true
     for (const entry of this.stones.values()) entry.mesh.visible=true
     this.dirty=true
   }
 
+  lookMode() { return this.mode==='roam' || this.mode==='seated' || this.mode==='photo' }
+
+  updateLook() {
+    this.camera.rotation.set(this.pitch,this.yaw,0,'YXZ')
+    this.dirty=true
+  }
+
   moveCamera(dt) {
-    const forward=new THREE.Vector3()
-    this.camera.getWorldDirection(forward)
-    forward.y=0
-    forward.normalize()
-    const sideways=new THREE.Vector3().crossVectors(forward,THREE.Object3D.DEFAULT_UP)
+    const forward=new THREE.Vector3(-Math.sin(this.yaw),0,-Math.cos(this.yaw))
+    const sideways=new THREE.Vector3().crossVectors(forward,THREE.Object3D.DEFAULT_UP).normalize()
     const vertical=Number(this.keys.has('KeyW'))-Number(this.keys.has('KeyS'))
     const horizontal=Number(this.keys.has('KeyD'))-Number(this.keys.has('KeyA'))
-    if (!vertical && !horizontal) return
-    const delta=forward.multiplyScalar(vertical).addScaledVector(sideways,horizontal).normalize().multiplyScalar(4.5*dt)
-    this.camera.position.add(delta)
-    this.controls.target.add(delta)
+    const desired=forward.multiplyScalar(vertical).addScaledVector(sideways,horizontal).normalize().multiplyScalar(this.mode==='photo'?6.2:4.9)
+    this.walkSpeed ||= new THREE.Vector3()
+    this.walkSpeed.lerp(desired,1-Math.exp(-dt*11))
+    if (this.walkSpeed.lengthSq()<.001) return
+    const p=this.camera.position
+    const x=p.x+this.walkSpeed.x*dt, z=p.z+this.walkSpeed.z*dt
+    if (!this.world || this.world.canWalk(x,p.z))p.x=x
+    if (!this.world || this.world.canWalk(p.x,z))p.z=z
     this.dirty=true
   }
 
   constrainCamera() {
-    if (this.mode==='specimen') return
-    const {position}=this.camera
-    position.x=THREE.MathUtils.clamp(position.x,-17,17)
-    position.z=THREE.MathUtils.clamp(position.z,-17,17)
-    if(this.mode==='roam') {
-      position.y=Math.max(position.y,1.15)
-      if (Math.max(Math.abs(position.x),Math.abs(position.z))<4.65 && position.y<2.15) position.y=2.15
+    if (this.mode==='specimen' || !this.world)return
+    const p=this.camera.position
+    const before=p.clone()
+    this.world.bound(p,this.mode==='roam')
+    if(this.controls.enabled && !p.equals(before)) {
+      this.controls.target.add(p.clone().sub(before))
+      this.camera.lookAt(this.controls.target)
     }
   }
 
   reset(mode = 'angled', flipped = false) {
     this.mode=mode
+    this.host.dataset.camera=mode
+    this.lookDrag=null
+    this.walkSpeed?.setScalar(0)
     this.down=null
     this.dragEntry=null
     this.focus=null
@@ -844,8 +965,8 @@ export class Board {
     this.dirty = true
     const poses={
       low:[3.3,6.4,14.4,0,.12,0],board:[4.1,2.9,13,0,.12,0],overhead:[0,14,.01,0,.12,0],
-      close:[3.7,3.6,6.2,0,.12,2.1],roam:[7,3.15,9,0,1.7,0],
-      seated:[0,2.35,10,0,.25,0],showcase:[3.15,9.1,14,0,.12,0],
+      close:[3.7,3.6,6.2,0,.12,2.1],roam:[7,1.61,9,0,1.05,0],photo:[6.6,3.6,9.2,0,.6,0],
+      seated:[0,1.8,6.95,0,.28,-2.3],showcase:[3.15,9.1,14,0,.12,0],
       hero:[5.3,6.8,11.6,0,.12,0],specimen:[1.15,1.15,2.55,0,.68,0],
     }
     const [x,y,z,tx,ty,tz]=poses[mode] || [0,10.9,11.6,0,.12,0]
@@ -854,17 +975,59 @@ export class Board {
     this.controls.minDistance = mode==='specimen' ? 1.35 : 4.3
     this.controls.maxDistance = mode==='specimen' ? 6 : 29
     this.controls.maxPolarAngle = mode==='specimen' ? 1.72 : mode==='roam' ? 1.80 : 1.52
+    this.controls.enabled=!this.lookMode()
     this.controls.enablePan=mode!=='specimen'
     this.controls.mouseButtons.LEFT=mode==='specimen'?THREE.MOUSE.ROTATE:null
     this.controls.touches.ONE=mode==='specimen'?THREE.TOUCH.ROTATE:null
     this.showcase = ['showcase','hero'].includes(mode)
     this.controls.autoRotate=false
-    this.controls.update()
+    this.camera.lookAt(this.controls.target)
+    if(this.lookMode()){
+      const euler=new THREE.Euler().setFromQuaternion(this.camera.quaternion,'YXZ')
+      this.pitch=euler.x
+      this.yaw=euler.y
+    }else this.controls.update()
   }
 
   async photograph() {
-    this.renderer.render(this.scene,this.camera)
+    if(this.mode==='photo' && this.photoAperture)await this.photoPipeline
+    this.renderFrame()
     return new Promise(resolve=>this.renderer.domElement.toBlob(resolve,'image/png'))
+  }
+
+  renderFrame() {
+    if (this.mode==='photo' && this.photoAperture && this.photoComposer) {
+      this.photoBokeh.uniforms.aperture.value=this.photoAperture*.0013
+      this.photoBokeh.uniforms.focus.value=this.photoFocus
+      this.photoComposer.render()
+    } else this.renderer.render(this.scene,this.camera)
+  }
+
+  async depthOfField(aperture,focus) {
+    this.photoAperture=aperture
+    this.photoFocus=focus
+    this.dirty=true
+    if (!aperture || this.photoComposer) return
+    this.photoPipeline ||= Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/BokehPass.js'),
+      import('three/addons/postprocessing/OutputPass.js'),
+    ]).then(([{EffectComposer},{RenderPass},{BokehPass},{OutputPass}])=>{
+      this.photoComposer=new EffectComposer(this.renderer)
+      const ratio=this.renderer.getPixelRatio()
+      this.photoPixelRatio=this.quality==='low'?Math.min(ratio,.65):ratio
+      this.photoComposer.setPixelRatio(this.photoPixelRatio)
+      this.photoBokeh=new BokehPass(this.scene,this.camera,{maxblur:.012})
+      this.photoComposer.addPass(new RenderPass(this.scene,this.camera))
+      this.photoComposer.addPass(this.photoBokeh)
+      this.photoComposer.addPass(new OutputPass())
+    }).catch(error=>{
+      this.photoPipeline=null
+      throw error
+    })
+    await this.photoPipeline
+    this.dirty=true
   }
 
   rayFor(event) {
@@ -877,42 +1040,44 @@ export class Board {
     this.rayFor(event)
     if(!dragging){
       const figures=this.ray.intersectObjects([...this.stones.values()].map(piece=>piece.mesh),true)
-      const piece=figures[0]?.object.parent.userData.square
-      if(piece)return piece
+      for(let object=figures[0]?.object;object && object!==this.scene;object=object.parent){
+        if(object.userData.square)return object.userData.square
+      }
     }
     const point=this.ray.ray.intersectPlane(this.boardPlane,new THREE.Vector3())
     if (point && Math.abs(point.x)<4 && Math.abs(point.z)<4) return squareAt(Math.floor(point.x+4),Math.floor(point.z+4))
   }
 
   animateCapture(entry) {
-    if (this.reduced) return this.scene.remove(entry.mesh)
+    if (this.reduced || this.motionSpeed==='instant') return this.scene.remove(entry.mesh)
     const from = entry.mesh.position.clone()
     const to = new THREE.Vector3(from.x<0?-5.2:5.2,-.3,from.z)
     this.departing.push({from,to,mesh:entry.mesh,started:performance.now()})
-    if (this.captureEffect && this.captureEffect!=='none' && this.cosmetics && this.particles!==false) {
-      const color={gold:0xe1b86b,crystal:0xa7d9e5,signal:0x70a0f4,ember:0xc86741}[this.captureEffect]
+    const style=this.captureEffect==='auto' ? immersiveEditions[this.spec(entry.type,entry.color).collection]?.effect || 'gold' : this.captureEffect
+    if (this.captureIntensity!==0 && style && style!=='none' && this.cosmetics && this.particles!==false) {
+      const color={gold:0xe1b86b,crystal:0xa7d9e5,signal:0x70a0f4,ember:0xc86741,cosmic:0xbdabff,water:0x81dadd,clockwork:0xc69a59,shadow:0x52577b}[style]
       const geometry=new THREE.BufferGeometry()
-      const points=new Float32Array(54)
+      const points=new Float32Array(3*Math.max(3,Math.round(18*(this.captureIntensity ?? 1))))
       geometry.setAttribute('position',new THREE.BufferAttribute(points,3))
       const material=new THREE.PointsMaterial({color,size:.085,transparent:true,depthWrite:false,opacity:.7})
       const burst=new THREE.Points(geometry,material)
       burst.position.copy(from)
       burst.position.y+=.18
       this.scene.add(burst)
-      this.effects.push({burst,points,start:performance.now()})
+      this.effects.push({burst,points,start:performance.now(),style})
     }
   }
 
   updateEffects(time) {
     this.dirty=true
     for(let i=this.effects.length-1;i>=0;i--) {
-      const {burst,points,start}=this.effects[i]
+      const {burst,points,start,style}=this.effects[i]
       const t=Math.min(1,(time-start)/420)
       for(let j=0;j<points.length/3;j++) {
         const angle=j*2.39996
-        const range=.15+t*(.68+(j%4)*.13)
+        const range=.15+t*((style==='water'?1.12:.68)+(j%4)*.13)
         points[j*3]=Math.cos(angle)*range
-        points[j*3+1]=Math.sin(t*2.3)*(.21+(j%5)*.074)
+        points[j*3+1]=Math.sin(t*2.3)*(style==='water'?.075:.21+(j%5)*.074)
         points[j*3+2]=Math.sin(angle)*range
       }
       burst.geometry.attributes.position.needsUpdate=true
@@ -924,17 +1089,37 @@ export class Board {
     }
   }
 
+  clearVisualMotion() {
+    for(const entry of this.stones.values())entry.flight=null
+    for(const {mesh} of this.departing)this.scene.remove(mesh)
+    this.departing.length=0
+    for(const {burst} of this.effects){
+      this.scene.remove(burst)
+      burst.geometry.dispose()
+      burst.material.dispose()
+    }
+    this.effects.length=0
+  }
+
   fly(entry) {
     if (!entry) return
     const spec=this.spec(entry.type,entry.color)
-    const style=spec.motion || this.moveStyle || 'glide'
+    const style=spec.motion || (this.moveStyle==='auto'?immersiveEditions[spec.collection]?.motion:this.moveStyle) || 'glide'
     const properties={glide:[245,.13,0],lift:[285,.39,0],cinematic:[345,.31,.04],
-      teleport:[175,.06,.89],liquid:[275,.2,.26],hologram:[230,.14,.72],dissolve:[255,.13,.59],mechanical:[205,.12,.05]}
+      teleport:[175,.06,.89],liquid:[275,.2,.26],hologram:[230,.14,.72],dissolve:[255,.13,.59],mechanical:[205,.12,.05],cosmic:[310,.28,.14],water:[240,.06,.10],shadow:[255,.09,.54],royal:[338,.31,.08]}
     const [duration,height,shrink]=properties[style] || properties.glide
-    entry.flight={style,from:entry.mesh.position.clone(),start:performance.now(),duration,height:height+(entry.type==='n'?.12:0),shrink}
+    const speed={instant:0,fast:.61,normal:1,cinematic:1.46}[this.motionSpeed] ?? 1
+    if(!speed || this.reduced){entry.flight=null;return}
+    const intensity=this.motionIntensity ?? 1
+    entry.flight={style,from:entry.mesh.position.clone(),start:performance.now(),duration:duration*speed,
+      height:(height+(entry.type==='n'?.12:0))*intensity,shrink:shrink*intensity,angle:entry.mesh.rotation.y}
   }
 
   render(chess,selected,legal,last,animate,visible) {
+    const fen=chess.fen?.()
+    const reconciled=fen && this.displayedFen && this.displayedFen!==fen && !animate
+    if (reconciled) this.clearVisualMotion()
+    if(fen)this.displayedFen=fen
     this.currentSelected=selected
     this.dirty = true
     if (animate && last && this.stones.has(last.from)) {
@@ -970,17 +1155,19 @@ export class Board {
       const visual=JSON.stringify(spec)+this.geometryQuality
       if (!entry || entry.type !== type || entry.color !== color || entry.visual !== visual) {
         const oldPosition=entry?.mesh.position.clone()
+        const promotionFlight=animate && last?.promotion===type && square===last.to ? entry?.flight : null
         if (entry) this.scene.remove(entry.mesh)
         const mesh=this.createPiece(type,color,spec)
         if (type === 'n') mesh.rotation.y = color === 'w' ? -.38 : Math.PI-.38
         mesh.position.copy(oldPosition || position(square))
         mesh.visible=!this.solitaire.visible
         this.scene.add(mesh)
-        entry = {mesh,type,color,visual,target:position(square)}
+        entry = {mesh,type,color,visual,target:position(square),flight:promotionFlight}
         this.stones.set(square,entry)
       }
       entry.mesh.userData.square = square
       entry.target.copy(position(square)).setY(square===selected ? .29 : .10)
+      if(reconciled)entry.mesh.position.copy(entry.target)
     }
     for (const [square,entry] of this.stones) if (!active.has(square)) {
       this.scene.remove(entry.mesh)

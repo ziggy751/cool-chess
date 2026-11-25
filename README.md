@@ -2,9 +2,9 @@
 
 A browser chess game with a real-time 3D board, a keyboard-accessible 2D view, a Stockfish opponent and a Node.js multiplayer server.
 
-![Chess Evolution 3D home screen](docs/screenshots/overhaul/home.webp)
+![Mountain Cabin in the Chess Evolution 3D showroom](public/world-previews/cabin.webp)
 
-[Before the update](docs/screenshots/overhaul/before.webp) · [Showroom](docs/screenshots/overhaul/showroom.webp) · [Piece editor](docs/screenshots/overhaul/mechanical.webp) · [Free roam](docs/screenshots/overhaul/free-roam.webp) · [Mobile](docs/screenshots/overhaul/mobile.webp) · [Ranked AI](docs/screenshots/overhaul/ranked-ai.webp)
+[Play on Cloudflare](https://cool-chess.52560.workers.dev/) · [Immersive world screenshots and verification](docs/immersive-worlds.md)
 
 ## Run locally
 
@@ -50,16 +50,16 @@ Keep the default `data/ratings.json` on a persistent volume, or set `CHESS_RATIN
 
 ## Showroom and gameplay update
 
-The home screen previews the current setup with a slowly orbiting camera. Open **Collection** to browse sets, boards, scenes, movement and capture effects. White and black piece editors preview a single model and let you apply field changes to one piece type, one side, or both sides. Saved presets include the piece-level overrides.
+The home screen previews the current setup with a slowly orbiting camera. Open **Collection** to browse sets, boards, locations, tables, lighting, cameras, and move and capture effects. White and black piece editors preview a single model and let you apply field changes to one piece type, one side, or both sides. Save a preset to keep the full appearance, including separate white and black piece settings.
 
-Right-drag to orbit, middle-drag to pan, and scroll to zoom. Two-finger gestures work on touchscreens. Press **C** to cycle cameras, **R** to reset, and **WASD** to move in Free roam. Double-click a piece in a match to focus on it. The camera button saves a PNG with the selected scene.
+Right-drag to orbit, middle-drag to pan, and scroll to zoom. In Seated view, right-drag to look from the player's chair and left-click to play. In Free roam, use **WASD** or the touchscreen arrows to walk, and drag to look. Press **C** to cycle cameras and **R** to reset. Double-click a piece in a match to focus on it. Open **Photography mode** to adjust field of view, exposure, background blur, focus distance and lighting, pause the environment, and save a PNG.
 
 **Ranked AI** starts at 400 Elo and uses nearby bot difficulty targets, separate browser-local rating history, and eleven in-game ranks. From the match panel, **Game info** supports saving a casual game, requesting a hint in casual AI, or undoing the last casual AI turn. **Challenges** includes interactive lessons. Custom casual clocks support increments.
 
 ## Graphics and modes
 
-- Twenty distinct illustrated environments with rendered table geometry with independent board palettes, scene lighting, and weather in selected scenes. The board and pieces use realtime geometry, shadows, filmic tone mapping, and physically based materials.
-- Twenty-five catalog editions use procedural silhouettes, bevelled detail, and distinct surface presets. The earlier models remain selectable when editing an individual piece. Choose white and black finishes independently, inspect each piece in an orbiting close-up viewer, and save presets. Ultra and Photorealistic presets load higher-resolution walnut textures and raise shadow resolution.
+- Twenty-five locations use 3D architecture and scenery, site-specific furniture and motion, and local reflection probes at compatible quality settings. The room and board are independently selectable. Existing location preferences are mapped to the closest available 3D location.
+- Forty-five piece editions include twenty new animated models. Their geometry, moving components, surface shaders and move and capture effects can be previewed in the showroom. The board library includes 36 finishes, 16 with animated shaders. Higher quality settings raise texture and shadow resolution. **Low** and **2D** are available for less powerful devices.
 - Standard chess, Chess960, King of the Hill, Three-Check, Crazyhouse, and a local Fog of War ruleset. Fog keeps standard legal movement and shows the side to move its own pieces and legal destinations. Move history is revealed at the end. Variant games are local, and online matches use standard chess.
 - The lower ten strengths use a separate Web Worker with progressively stronger tactical awareness and controlled mistakes. Higher levels and analysis use Stockfish Lite in a Web Worker. Elo labels are approximate difficulty targets.
 - Puzzles, a rotating daily selection, progressive Survival and themed Boss Battles. Finished standard games support move replay, PGN export, and Stockfish analysis. Sandbox accepts a FEN or the final position of an imported PGN.
@@ -75,7 +75,7 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Automated coverage includes standard perft through depth five and Kiwipete through depth three, special moves and draw rules, local variants, timed moves, server move validation, reconnecting seats, ranked result persistence, private rooms in two independent browser contexts, all 30 engine settings, analysis, and a mobile-width match. The timeout rules cover common insufficient-mating-material cases. Exhaustive proof of a possible mating sequence in unusual positions is outside this implementation.
+Automated coverage includes standard perft through depth five and Kiwipete through depth three, special moves and draw rules, local variants, timed moves, server move validation, reconnecting seats, ranked result persistence, private rooms in two independent browser contexts, all 30 engine settings, analysis, a mobile-width match, animated material rendering, and a location switch during a match followed by a PNG export. The timeout rules cover common insufficient-mating-material cases. Exhaustive proof of a possible mating sequence in unusual positions is outside this implementation.
 
 ## Internal AI benchmark
 
@@ -91,6 +91,6 @@ All 1,348 played plies were legal. Material at the cap is reported separately fr
 
 ## Visual references and assets
 
-The supplied 18 concept images and the linked [Chess Infinity](https://www.dekudeals.com/items/chess-infinity), [Teckell Stratego](https://designitaly.com/products/chess-game-board-stratego-lorenzo-digiovanni-teckell), [Cyberpunk Chess Board](https://sketchfab.com/3d-models/cyberpunk-chess-board-c389e219c1514a46b7aca3a018afc5f2), [Chess VR](https://store.steampowered.com/app/2054100/), and [Marmo Storage Chess Set](https://www.chessworld.com.au/products/marmo-storage-chess-set) were used for visual direction. The meshes and texture patterns are procedural and the environment artwork is original generated imagery. Reflection lighting uses the CC0 [Studio Small 03 HDRI from Poly Haven](https://polyhaven.com/a/studio_small_03).
+Visual direction comes from the supplied reference packs. The game uses original procedural geometry and shaders, with sourced furniture, rocks, plants, wood and Earth surface data. See the asset sources and licenses in the [immersive world notes](docs/immersive-worlds.md#assets).
 
 Stockfish ([upstream source](https://github.com/nmrugg/stockfish.js), GPL-3.0) and chessops ([upstream source](https://github.com/niklasf/chessops), GPL-3.0) retain their upstream terms. The production build copies the Stockfish license alongside its WebAssembly worker.

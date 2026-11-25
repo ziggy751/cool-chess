@@ -1,0 +1,25 @@
+const editions=[
+  ['mercury','Liquid Mercury','chrome','machined','flux','liquid',0xb2c6db,1,.075,0,'liquid','crystal'],
+  ['black-hole','Black Hole','obsidian','rings','vortex','vortex',0x49465e,.82,.18,.12,'cosmic','cosmic'],
+  ['quantum','Quantum Glass','holographic','ribs','lattice','grid',0x79c2d8,.17,.145,.48,'hologram','signal'],
+  ['dragonstone','Dragonstone','stone','crenel','scales','molten',0x715749,.08,.57,0,'royal','ember'],
+  ['clockwork','Clockwork Royalty','mechanical','gear','gear','mechanical',0xcba16c,.88,.24,0,'mechanical','clockwork'],
+  ['stellar','Cosmic Nebula','nebula','rings','vortex','nebula',0x687bc2,.24,.13,.42,'cosmic','cosmic'],
+  ['eternal-frost','Eternal Frost','frost','facets','prism','frost',0xa7d3e4,.13,.15,.56,'dissolve','crystal'],
+  ['molten-gold','Molten Gold','gold','filigree','halo','goldflow',0xb48949,.88,.22,0,'royal','gold'],
+  ['living-ocean','Living Ocean','glass','rings','flux','water',0x5ca5b2,.22,.12,.63,'water','water'],
+  ['thunder-core','Thunder Core','storm','obelisk','lattice','storm',0x54648c,.63,.24,0,'shadow','signal'],
+  ['prism','Prism Crystal','crystal','facets','prism','spectrum',0xb7cfe6,.14,.11,.52,'dissolve','crystal'],
+  ['solar-flare','Solar Flare','titanium','ribs','halo','sunspots',0xd0a170,.79,.25,.03,'royal','ember'],
+  ['obsidian-royalty','Obsidian Royalty','obsidian','filigree','scales','goldflow',0x514e53,.66,.2,0,'shadow','gold'],
+  ['aurora-piece','Aurora','phantom','facets','ripple','ribbons',0x7fbca9,.19,.135,.59,'cosmic','cosmic'],
+  ['nano','Nano-Tech','titanium','machined','plates','grid',0x83b0bf,.76,.26,0,'mechanical','clockwork'],
+  ['relics','Floating Relics','roman','obelisk','relic','celestial',0xb0a396,.52,.26,.08,'royal','gold'],
+  ['living-wood','Living Wood','carved','heritage','scales','goldflow',0xad7e50,.09,.33,0,'royal','gold'],
+  ['liquid-sapphire','Liquid Sapphire','sapphire','facets','flux','water',0x5279be,.28,.115,.49,'water','water'],
+  ['ink-shadow','Ink Shadow','phantom','fluted','ripple','ink',0x78839a,.37,.25,.1,'shadow','shadow'],
+  ['timekeeper','Timekeeper','mechanical','filigree','dial','mechanical',0xd9b883,.81,.27,0,'mechanical','clockwork'],
+]
+export const immersiveEditions=Object.fromEntries(editions.map(([id,label,parent,detail,parts,pattern,color,metal,rough,glass,motion,effect])=>
+  [id,{label,parent,detail,parts,pattern,color,metal,rough,glass,motion,effect,category:'animated',
+    white:id,black:id+' dark'}]))

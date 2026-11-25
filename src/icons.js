@@ -45,5 +45,7 @@ import icon43 from 'lucide-static/icons/panel-right-close.svg?raw'
 import icon44 from 'lucide-static/icons/sliders-horizontal.svg?raw'
 import icon45 from 'lucide-static/icons/expand.svg?raw'
 import icon46 from 'lucide-static/icons/house.svg?raw'
+import chevronUp from 'lucide-static/icons/chevron-up.svg?raw'
 const icons = {'crown':icon0,'gamepad-2':icon1,'users':icon2,'bot':icon3,'puzzle':icon4,'layers':icon5,'chart-no-axes-column-increasing':icon6,'settings':icon7,'chevron-down':icon8,'chevron-left':icon9,'chevron-right':icon10,'chevrons-left':icon11,'chevrons-right':icon12,'box':icon13,'grid-2x2':icon14,'rotate-ccw':icon15,'flip-vertical-2':icon16,'maximize':icon17,'flag':icon18,'handshake':icon19,'clock':icon20,'copy':icon21,'check':icon22,'arrow-up-right':icon23,'circle-help':icon24,'menu':icon25,'x':icon26,'plus':icon27,'chess-knight':icon28,'volume-2':icon29,'download':icon30,'wifi':icon31,'keyboard':icon32,'swords':icon33,'panel-left-close':icon34,'shuffle':icon35,'camera':icon36,'search':icon37,'star':icon38,'move':icon39,'sparkles':icon40,'play':icon41,'arrow-right':icon42,'panel-right-close':icon43,'sliders-horizontal':icon44,'expand':icon45,'house':icon46}
+icons['chevron-up']=chevronUp
 export const icon = name => icons[name] || ""

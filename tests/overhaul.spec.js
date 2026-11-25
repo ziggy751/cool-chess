@@ -19,7 +19,7 @@ test('showroom previews setups and stores a separate model for one piece',async(
   page.on('console',msg=>{if(msg.type()==='error' && /THREE|GL_INVALID/.test(msg.text()))errors.push(msg.text())})
   await page.goto('/')
   await setting(page,'Collection').click()
-  await expect(page.locator('.catalog-card')).toHaveCount(25)
+  await expect(page.locator('.catalog-card')).toHaveCount(45)
   await page.getByRole('searchbox',{name:'Search collection'}).fill('Living Marble')
   await button(page,'Living Marble').click()
   await button(page,'Favourite Living Marble').click()

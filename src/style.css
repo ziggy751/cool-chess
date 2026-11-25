@@ -57,7 +57,6 @@ h1{font:400 clamp(39px,4.2vw,62px)/.98 "Instrument Serif",Georgia,serif;letter-s
 .clock{display:flex;align-items:center;justify-content:center;gap:6px;color:#c7bfc2;font-weight:700;font-size:16px;font-variant-numeric:tabular-nums;min-width:87px;padding:5px 7px;background:#25242a;border:1px solid #36333b;border-radius:5px}
 .clock svg{width:13px;height:13px}.clock.running{color:#231b13;background:#d9b98e;border-color:#ebcda8}.clock.low-time{background:#642f36;color:#f8dddb}
 .stage{height:clamp(405px,calc(100dvh - 382px),690px);margin:8px 0;position:relative;isolation:isolate;overflow:hidden;border-radius:9px;border:1px solid #4a3b32;background:var(--stage,#231c1b) center 46%/cover no-repeat;--light-square:#dcb88e;--dark-square:#754a34}
-.stage{background-image:linear-gradient(0deg,#100d10a0,transparent 75%),var(--backdrop)}
 .stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;box-shadow:inset 0 0 90px #100d11aa}
 .stage-caption{position:absolute;top:13px;left:13px;z-index:1;gap:7px;background:#211b1ae8;padding:5px 9px;border:1px solid #75624c66;border-radius:5px;color:#ebd6bc;font-size:10px;letter-spacing:.015em;pointer-events:none}
 .stage-caption>span{background:var(--gold);height:5px;width:5px}
@@ -140,15 +139,6 @@ kbd{background:#322e36;border:1px solid #433c45;border-radius:4px;padding:2px 5p
 
 #inspector{height:235px;margin-bottom:13px;background:radial-gradient(ellipse at 45% 60%,#514137,#201b20 68%);border:1px solid #40383d;border-radius:7px;overflow:hidden}
 #inspector canvas{width:100%;height:100%;display:block;touch-action:none}
-
-#weather{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-#weather i{position:absolute;top:var(--y);left:var(--x);width:2px;height:2px;border-radius:50%;background:#eee9edbb;animation:weather-fall var(--speed) var(--delay) linear infinite}
-#weather[data-kind="rain"] i{height:23px;width:1px;background:#acdef360}
-#weather[data-kind="snow"] i{width:3px;height:3px;animation-duration:calc(var(--speed) * 3)}
-#weather[data-kind="embers"] i{background:#f9ae62;box-shadow:0 0 6px #ff7127;animation-name:ember-rise;animation-duration:calc(var(--speed) * 2)}
-.reduce-motion #weather{display:none}
-@keyframes weather-fall{0%{opacity:0;transform:translate(-10px,-55px)}25%{opacity:.8}100%{opacity:0;transform:translate(39px,245px)}}
-@keyframes ember-rise{0%{opacity:0;transform:translate(0,190px)}28%{opacity:.65}100%{opacity:0;transform:translate(25px,20px)}}
 
 .analysis-graph{background:#272329;border:1px solid #413840;border-radius:6px;padding:8px}
 .analysis-graph canvas{display:block;width:100%;height:auto}

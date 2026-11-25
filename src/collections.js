@@ -1,3 +1,5 @@
+import { immersiveEditions } from './worlds/chess-editions.js'
+
 // Cross-section of the weighted foot, in radius/height units. The vertical
 // and radial offsets define the waist and shoulders of each turned body.
 const collections = {
@@ -27,7 +29,10 @@ export function profileFor(collection, profile, ring, base='classic') {
     mechanical:['chrome',.044,40],emerald:['crystal',.035,10],sapphire:['glass',-.02,12],
     phantom:['ceramic',-.03,50],celestial:['gold',.02,68],living:['marble',.03,64],
   }
-  const [parent,shift=0,segments] = newProfiles[collection] || [collection]
+  const edition=immersiveEditions[collection]
+  const key=edition?.parent || collection
+  const [parent,baseShift=0,segments] = newProfiles[key] || [key]
+  const shift=baseShift+(edition?((collection.length%8)-3)*.011:0)
   const [,foot,[flare,waist,collar],sides] = collections[parent] || collections.staunton
   const bases = {
     bevel:[[.35,.015],[.37,.042],[.37,.079],[.30,.13],[.28,.17]],
@@ -39,8 +44,9 @@ export function profileFor(collection, profile, ring, base='classic') {
     const offset = height < .30 ? flare : height < .66 ? waist : collar
     return [radius+offset+Math.sin(height*7)*shift,height]
   })
+  const styled=edition ? scaled.map(([radius,y])=>[radius*(1+Math.sin(y*19+collection.length)*.043),y]) : scaled
   return {
-    points:[[0,0],[ring[1][0],0],...(bases[base] || foot),[.27,.175],...scaled],
+    points:[[0,0],[ring[1][0],0],...(bases[base] || foot),[.27,.175],...styled],
     sides:base==='jewel'?12:segments || sides,
   }
 }
@@ -76,6 +82,7 @@ const editions = {
 }
 export const premiumCollections = Object.fromEntries(Object.entries(editions).map(([key,[label,white,black,detail,category]])=>
   [key,{label,white,black,detail,category}]))
+Object.assign(premiumCollections,immersiveEditions)
 Object.assign(collectionList,Object.fromEntries(Object.entries(premiumCollections).map(([key,item])=>[key,item.label])))
 
 export const baseStyles = { classic:'Original', bevel:'Machined bevel', stepped:'Stepped plinth', jewel:'Faceted collar' }

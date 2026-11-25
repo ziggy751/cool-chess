@@ -37,6 +37,6 @@ test('every animated collection and board renders two distinct shader phases', a
     }
     return {staticItems,materials:materials.length,boards:themes.length}
   })
-  expect(result).toEqual({staticItems:[],materials:11,boards:10})
+  expect(result).toEqual({staticItems:[],materials:31,boards:16})
   expect(errors).toEqual([])
 })
