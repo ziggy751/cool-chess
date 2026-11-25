@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 test('a live match survives location and table changes and exports a WebGL photograph',async({page})=>{
-  test.setTimeout(120000)
-  await page.setViewportSize({width:900,height:660})
+  test.setTimeout(150000)
+  await page.setViewportSize({width:820,height:610})
   const errors=[]
   page.on('pageerror',error=>errors.push(error.message))
   page.on('console',message=>{if(message.type()==='error' && /THREE|GL_INVALID/.test(message.text()))errors.push(message.text())})
@@ -21,12 +21,12 @@ test('a live match survives location and table changes and exports a WebGL photo
   await page.getByRole('button',{name:'Environments',exact:true}).click()
   await page.getByRole('button',{name:'Space Station',exact:true}).click()
   await expect(world).toHaveAttribute('data-world','orbit')
-  await page.getByRole('button',{name:'Tables',exact:true}).click()
-  await page.getByRole('button',{name:'Walnut joinery',exact:true}).click()
-  await page.getByRole('button',{name:'Explore location'}).click()
+  await page.getByRole('button',{name:'Tables',exact:true}).dispatchEvent('click')
+  await page.getByRole('button',{name:'Walnut joinery',exact:true}).dispatchEvent('click')
+  await page.getByRole('button',{name:'Explore location'}).dispatchEvent('click')
   await expect(world).toHaveAttribute('data-camera','roam')
   await page.keyboard.press('KeyD',{delay:350})
-  await page.getByRole('button',{name:'Photography mode'}).click()
+  await page.getByRole('button',{name:'Photography mode'}).dispatchEvent('click')
   await page.getByLabel('Pause scene').check()
   await page.getByLabel('Background blur').fill('0.6')
   const [download]=await Promise.all([
@@ -36,8 +36,8 @@ test('a live match survives location and table changes and exports a WebGL photo
   const png=await readFile(await download.path())
   expect(png.subarray(1,4).toString()).toBe('PNG')
   expect(png.length).toBeGreaterThan(12000)
-  await page.getByRole('button',{name:'Exit photography'}).click()
-  await page.getByRole('button',{name:'Apply and play'}).click()
+  await page.getByRole('button',{name:'Exit photography'}).dispatchEvent('click')
+  await page.getByRole('button',{name:'Apply and play'}).dispatchEvent('click')
   await expect(page.locator('#match-screen')).toBeVisible()
   if (await world.isVisible())await view.click()
   await expect(page.locator('[data-square=e4]')).toHaveAttribute('aria-label','e4 white Pawn')

@@ -23,6 +23,21 @@ There is more close-up detail in the three priority locations than in the remain
 
 The Node suite passed 23 tests. Browser checks covered 3D and 2D input, all 30 AI levels, Ranked AI, private multiplayer with reconnect, legal special moves, mobile layout, saves, and showroom presets. All 31 animated collections and 16 animated boards rendered distinct shader phases. A separate regression case switched rooms and tables during a match, exported a PNG with background blur, and verified the position was preserved. The production Worker bundle passed Wrangler’s dry run and the local Durable Object passed the socket test.
 
+### Software rendering sample
+
+The benchmark used Chromium with SwiftShader at 640 × 420 and a fixed free-roam camera. Setup time includes the room assets and three warm-up frames. The cloud CPU was shared with browser checks during part of the run. These measurements describe that software renderer. The 60 FPS target still needs testing on hardware-accelerated devices.
+
+| Location | Preset | Triangles before | Triangles after | Setup after | Software FPS after |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Mountain Cabin | High | 1,055,454 | 414,942 | 13.7 s | 0.36 |
+| Mountain Cabin | Performance | 457,928 | 135,216 | 8.0 s | 0.38 |
+| Cyberpunk Penthouse | High | 814,052 | 251,732 | 13.3 s | 0.27 |
+| Cyberpunk Penthouse | Performance | 421,040 | 112,056 | 3.2 s | 0.77 |
+| Space Station | High | 786,886 | 224,566 | 7.2 s | 0.71 |
+| Space Station | Performance | 397,134 | 88,150 | 2.9 s | 1.03 |
+
+Returning to Mountain Cabin after four location switches left renderer counts at 90 geometries and 50 textures. The browser’s reported JavaScript heap moved from 25 to 26 MiB after garbage collection. Free-roam checks verified the scene boundary and the table collision. The showroom's high-detail piece inspector retained the detailed mesh, and the match uses a lighter version of the same silhouette.
+
 ## Assets
 
 | Game files | Source | Terms |

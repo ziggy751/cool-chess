@@ -28,8 +28,8 @@ export function peaks(c,{z=-48,snow=true,width=164,depth=91,height=27}={}) {
 
 export function pineValley(c) {
   const low=c.detail==='low'
-  const count=low?44:76
-  const tiers=low?6:8, arms=low?3:4, twigs=low?2:3
+  const count=low?32:58
+  const tiers=low?6:7, arms=low?3:4, twigs=low?2:3
   const needles=[],powder=[]
   for(let tier=0;tier<tiers;tier++){
     const radius=1.95*(1-tier/tiers*.87)

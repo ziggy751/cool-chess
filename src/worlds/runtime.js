@@ -44,10 +44,12 @@ export class WorldStage {
     this.scene.fog=['orbit','cosmic'].includes(profile.builder) ? null : new T.Fog(profile.sky,38,139)
     this.scene.add(craft.root)
     old?.dispose()
+    this.loadingAssets=true
     this.pendingProbe=true
     this.changed(profile.id)
     await Promise.allSettled(craft.pending)
     if (this.room===craft) {
+      this.loadingAssets=false
       this.pendingProbe=true
       this.changed(profile.id)
     }
@@ -82,7 +84,7 @@ export class WorldStage {
 
   capture(time,hide,quality) {
     const refresh=(quality==='ultra'||quality==='photo') && time-this.lastProbe>10000
-    if(!this.room || (!this.pendingProbe && !refresh))return false
+    if(!this.room || this.loadingAssets || (!this.pendingProbe && !refresh))return false
     if(!this.target){
       this.target=new T.WebGLCubeRenderTarget(96,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter})
       this.probe=new T.CubeCamera(.28,155,this.target)

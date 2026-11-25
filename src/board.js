@@ -43,7 +43,7 @@ const engravingBand=new THREE.CylinderGeometry(.345,.345,.04,48,1,true)
 const felt = new THREE.MeshStandardMaterial({color:0x243830,roughness:1})
 const feltGeometry = new THREE.CylinderGeometry(.27,.285,.014,48)
 
-function turnedProfile(points, scale = 1) {
+function turnedProfile(points, scale, divisions) {
   const path = new THREE.Path()
   path.moveTo(points[0][0]*scale,points[0][1])
   for (let index = 1; index < points.length - 1; index++) {
@@ -53,7 +53,7 @@ function turnedProfile(points, scale = 1) {
   }
   const last = points.at(-1)
   path.lineTo(last[0]*scale,last[1])
-  return path.getPoints(4)
+  return path.getPoints(divisions)
 }
 
 function boardFrame(size, depth, bevel) {
@@ -76,7 +76,10 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
   if (geometryCache.has(key)) return geometryCache.get(key)
   const shape = profileFor(collection,profile[type],ring,base)
   const height = type === 'p' ? .82 : type === 'q' ? 1.08 : 1
-  let body = new THREE.LatheGeometry(turnedProfile(shape.points,height),quality==='low'?Math.min(28,shape.sides):shape.sides)
+  const closeUp=quality==='display'
+  const low=quality==='low'
+  const radial=Math.min(low?20:closeUp?72:44,shape.sides)
+  let body=new THREE.LatheGeometry(turnedProfile(shape.points,height,low?2:closeUp?4:3),radial)
   if (type === 'b') {
     const cutter = new Brush(new THREE.BoxGeometry(.37,.075,.47))
     cutter.position.set(.163,.986,0)
@@ -89,7 +92,7 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
   const list = [[body]]
   const detail = premiumCollections[collection]?.detail
   const collar = (radius,y,tube=.012,shade=.73) => {
-    const geometry = new THREE.TorusGeometry(radius,tube,8,48).rotateX(Math.PI/2)
+    const geometry = new THREE.TorusGeometry(radius,tube,low?5:8,low?24:closeUp?48:36).rotateX(Math.PI/2)
     list.push([geometry,0,y,0,0,shade])
   }
   collar(type==='p'?.258:.313,.099,.009)
@@ -98,10 +101,11 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
   }
   if (['heritage','filigree','fluted','rings'].includes(detail)) {
     collar(type==='p'?.23:.285,.145,.012)
-    for (let iris=0;iris<16;iris++) {
-      const a=iris*Math.PI/8
+    const count=low?8:16
+    for (let iris=0;iris<count;iris++) {
+      const a=iris*Math.PI*2/count
       const radius=type==='p'?.263:.321
-      const inset=new THREE.SphereGeometry(.011,8,6).scale(.75,1.4,.75)
+      const inset=new THREE.SphereGeometry(.011,low?5:8,low?4:6).scale(.75,1.4,.75)
       list.push([inset,Math.sin(a)*radius,.071,Math.cos(a)*radius,0,.64])
     }
   }
@@ -112,7 +116,7 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
       list.push([new THREE.BoxGeometry(.038,.044,.034),Math.cos(angle)*radius,.127,Math.sin(angle)*radius,-angle, .59])
     }
   }
-  const ball = (radius, y, x = 0, z = 0) => list.push([new THREE.SphereGeometry(radius, 20, 14), x, y, z])
+  const ball = (radius, y, x = 0, z = 0) => list.push([new THREE.SphereGeometry(radius,low?10:closeUp?20:16,low?7:closeUp?14:10),x,y,z])
   const box = (width, height, depth, x, y, z, angle = 0) => list.push([new THREE.BoxGeometry(width,height,depth),x,y,z,angle])
   if (type === 'p') ball(.145,.65)
   if (type === 'b') ball(.048,1.12)
@@ -149,8 +153,9 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
     outline.quadraticCurveTo(.24,.74,.10,.83)
     outline.bezierCurveTo(.02,.76,.20,.57,.17,.49)
     outline.closePath()
-    const extrusion = new THREE.ExtrudeGeometry(outline,{depth:.13,bevelThickness:.049,bevelSize:.041,bevelSegments:5,curveSegments:16})
-    const head = new TessellateModifier(quality==='low'?.082:.046,4).modify(extrusion)
+    const extrusion=new THREE.ExtrudeGeometry(outline,{depth:.13,bevelThickness:.049,bevelSize:.041,
+      bevelSegments:low?2:closeUp?5:3,curveSegments:low?7:closeUp?16:10})
+    const head=new TessellateModifier(low?.14:closeUp?.046:.094,closeUp?4:2).modify(extrusion)
     extrusion.dispose()
     const vertices=head.attributes.position
     for(let index=0;index<vertices.count;index++){
@@ -166,20 +171,21 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
     smooth.computeVertexNormals()
     list.push([smooth])
     for (const side of [-1,1]) {
-      const eye = new THREE.SphereGeometry(.037,20,16).scale(1,.7,.55)
+      const eye = new THREE.SphereGeometry(.037,closeUp?20:12,closeUp?16:8).scale(1,.7,.55)
       list.push([eye,.125,1.008,side*.134,0,.63])
-      const pupil = new THREE.SphereGeometry(.016,18,12).scale(1,.92,.52)
+      const pupil = new THREE.SphereGeometry(.016,closeUp?18:10,closeUp?12:7).scale(1,.92,.52)
       list.push([pupil,.132,1.007,side*.151,0,.32])
-      const nostril = new THREE.SphereGeometry(.023,20,12).scale(1,.68,.52)
+      const nostril = new THREE.SphereGeometry(.023,closeUp?20:10,closeUp?12:7).scale(1,.68,.52)
       list.push([nostril,.287,.874,side*.128,0,.50])
       const mouth = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
         new THREE.Vector3(.314,.819,side*.116),new THREE.Vector3(.251,.812,side*.135),
         new THREE.Vector3(.188,.823,side*.133),
-      ]),10,.008,6,false)
+      ]),closeUp?10:6,.008,closeUp?6:4,false)
       list.push([mouth,0,0,0,0,.44])
     }
-    for (let i = 0; i < 10; i++) {
-      const t = i / 9
+    const strands=low?6:10
+    for (let i = 0; i < strands; i++) {
+      const t = i / (strands-1)
       const hair = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
         new THREE.Vector3(-.145+t*.12,.60+t*.52,.135),
         new THREE.Vector3(-.222+t*.15,.637+t*.48,.140),
@@ -187,7 +193,7 @@ function pieceGeometry(type,collection='staunton',base='classic',quality='high')
         new THREE.Vector3(-.253+t*.155,.618+t*.49,-.071),
         new THREE.Vector3(-.222+t*.15,.637+t*.48,-.140),
         new THREE.Vector3(-.145+t*.12,.60+t*.52,-.135),
-      ]),20,.014,8,false)
+      ]),closeUp?20:10,.014,closeUp?8:5,false)
       list.push([hair,0,0,0,0,.74])
     }
   }
@@ -362,6 +368,8 @@ export class Board {
     const key = this.key = new THREE.DirectionalLight(0xffeddb,2.15)
     key.position.set(-4,7,-3)
     key.castShadow = true
+    key.shadow.autoUpdate=false
+    key.shadow.needsUpdate=true
     key.shadow.mapSize.set(1024,1024)
     Object.assign(key.shadow.camera,{ left:-7,right:7,top:7,bottom:-7,near:.3,far:24 })
     key.shadow.bias = -.0002
@@ -558,6 +566,7 @@ export class Board {
         if (this.soloMesh.userData.gear && this.cosmetics) this.soloMesh.userData.gear.rotation.y+=elapsed*1.1
         this.dirty=true
       }
+      const capturing=this.departing.length>0
       for (let i=this.departing.length-1;i>=0;i--) {
         const capture = this.departing[i]
         const t = this.reduced ? 1 : Math.min(1,(performance.now()-capture.started)/340)
@@ -598,7 +607,8 @@ export class Board {
         }
       }
       if (this.effects.length) this.updateEffects(time)
-      if (this.dirty || cameraMoved || worldAnimated || moving || this.wasMoving || (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)) {
+      if(capturing || moving || this.wasMoving || this.dragEntry || this.solitaire.visible && !this.reduced)this.key.shadow.needsUpdate=true
+      if (this.dirty || cameraMoved || worldAnimated || capturing || moving || this.wasMoving || (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)) {
         this.lastFrame = time
         this.renderFrame()
         this.dirty = false
@@ -723,6 +733,7 @@ export class Board {
     this.currentTheme = [key,white,black,environment,collection,overrides]
     this.finishes=[white,black]
     this.dirty = true
+    this.key.shadow.needsUpdate=true
     const [light,dark,frame,type,pattern] = palettes[key] || palettes.walnut
     this.host.parentNode.style.setProperty('--light-square',light)
     this.host.parentNode.style.setProperty('--dark-square',dark)
@@ -796,9 +807,9 @@ export class Board {
     return this.detailMaterials.get(key)
   }
 
-  createPiece(type,color,spec) {
+  createPiece(type,color,spec,quality=this.geometryQuality || (this.quality==='low'?'low':'high')) {
     const group=new THREE.Group()
-    const model=new THREE.Mesh(pieceGeometry(type,spec.collection,spec.base,this.geometryQuality),this.materialFor(type,color,spec))
+    const model=new THREE.Mesh(pieceGeometry(type,spec.collection,spec.base,quality),this.materialFor(type,color,spec))
     model.castShadow = model.receiveShadow = true
     const pad=new THREE.Mesh(feltGeometry,felt)
     pad.position.y=.003
@@ -893,6 +904,7 @@ export class Board {
     const tint={warm:0xffc697,cool:0x9acbff,studio:0xf4eee7}[setting] || profile.light
     this.key.color.setHex(tint)
     this.key.position.set(environment==='neon'?-9:-6,12,-12)
+    this.key.shadow.needsUpdate=true
     this.key.intensity=setting==='studio'?3.08:environment==='cabin'?2.63:environment==='neon'?2.51:2.68
     this.fill.color.setHex(profile.light)
     this.fill.intensity=environment==='neon'||environment==='orbit'?1.12:1.44
@@ -900,10 +912,11 @@ export class Board {
 
   inspectPiece(type='n',color='w') {
     if (this.soloMesh) this.solitaire.remove(this.soloMesh)
-    this.soloMesh=this.createPiece(type,color,this.spec(type,color))
+    this.soloMesh=this.createPiece(type,color,this.spec(type,color),this.quality==='low'?'low':'display')
     this.soloMesh.rotation.y=.42
     this.solitaire.add(this.soloMesh)
     this.solitaire.visible=true
+    this.key.shadow.needsUpdate=true
     this.table.visible=false
     if(this.world?.furniture)this.world.furniture.root.visible=false
     for (const entry of this.stones.values()) entry.mesh.visible=false
@@ -914,6 +927,7 @@ export class Board {
   showBoard() {
     this.solitaire.visible=false
     this.table.visible=true
+    this.key.shadow.needsUpdate=true
     if(this.world?.furniture)this.world.furniture.root.visible=true
     for (const entry of this.stones.values()) entry.mesh.visible=true
     this.dirty=true
@@ -1122,6 +1136,7 @@ export class Board {
     if(fen)this.displayedFen=fen
     this.currentSelected=selected
     this.dirty = true
+    this.key.shadow.needsUpdate=true
     if (animate && last && this.stones.has(last.from)) {
       const old = this.stones.get(last.from)
       const castle = /[kq]/.test(last.flags) && old.type==='k'

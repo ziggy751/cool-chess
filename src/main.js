@@ -462,7 +462,7 @@ function applySettings() {
   const cosmetic = settings.cosmetics && !(screen==='match' && mode==='online' && onlineState?.division)
   if (board) {
     board.cosmetics=cosmetic
-    board.geometryQuality=settings.modelQuality
+    board.geometryQuality=settings.quality==='low'?'low':settings.modelQuality
     board.shadows=settings.shadows
     board.reflections=settings.reflections
     board.textureQuality=settings.textureQuality
