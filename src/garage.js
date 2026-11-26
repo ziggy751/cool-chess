@@ -4,8 +4,10 @@ import { finishList, pieces, palettes, themeList } from './board.js'
 import { icon } from './icons.js'
 
 export const movements={auto:'Match the piece edition',glide:'Classic glide',lift:'Smooth lift',cinematic:'Cinematic',teleport:'Teleport',
-  liquid:'Liquid transformation',hologram:'Holographic reconstruction',dissolve:'Crystal dissolve',mechanical:'Mechanical movement',cosmic:'Cosmic trail',water:'Water glide',shadow:'Shadow transfer',royal:'Royal procession'}
-export const effects={none:'None',gold:'Gold dust',crystal:'Crystal shards',signal:'Signal pulse',ember:'Embers',auto:'Match the piece edition',cosmic:'Starlight',water:'Water droplets',clockwork:'Clockwork fragments',shadow:'Shadow motes'}
+  liquid:'Liquid transformation',hologram:'Holographic reconstruction',dissolve:'Crystal dissolve',mechanical:'Mechanical movement',cosmic:'Cosmic trail',water:'Water glide',shadow:'Shadow transfer',royal:'Royal procession',
+  snow:'Snow trail',globe:'Snow globe swirl',lights:'Festive sparkle'}
+export const effects={none:'None',gold:'Gold dust',crystal:'Crystal shards',signal:'Signal pulse',ember:'Embers',auto:'Match the piece edition',cosmic:'Starlight',water:'Water droplets',clockwork:'Clockwork fragments',shadow:'Shadow motes',
+  frost:'Snow flurries',crumb:'Gingerbread crumbs',ribbon:'Festive ribbon'}
 export const cameras={flat:'Classic 2D',angled:'Standard 3D',low:'Cinematic',board:'Board-level',
   close:'Close-up',orbit:'Free orbit',roam:'Free roam',showcase:'Automatic showcase',seated:'Seated',overhead:'Overhead',photo:'Photography'}
 const variants=[['sets','Piece sets'],['environment','Environments'],['table','Tables'],['theme','Chessboards'],
@@ -23,7 +25,7 @@ export const getStyle = settings => Object.fromEntries(styleKeys.map(key=>[key,s
 
 const entries = {
   sets:Object.entries(catalog).map(([id,item])=>({id,label:item.label,category:item.category,image:'/catalog/'+id+'.webp'})),
-  theme:Object.entries(themeList).map(([id,label])=>({id,label,category:palettes[id][4]?'animated':'classic',image:'/board-previews/'+id+'.webp'})),
+  theme:Object.entries(themeList).map(([id,label])=>({id,label,category:id.startsWith('festive-')?'Christmas':palettes[id][4]?'animated':'classic',image:'/board-previews/'+id+'.webp'})),
   environment:Object.values(locations).map(({id,name,category,preview})=>({id,label:name,category,image:preview,animated:true})),
   table:Object.entries(tables).map(([id,label])=>({id,label,image:id==='auto'?locations.cabin.preview:'/table-previews/'+id+'.webp'})),
   lighting:Object.entries(lightingStyles).map(([id,label])=>({id,label})),

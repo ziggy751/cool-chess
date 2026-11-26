@@ -2,13 +2,19 @@ import { Chess } from 'chess.js'
 
 export class Engine {
   constructor() {
-    this.worker = new Worker('/engine/stockfish-19-lite-single.js')
     this.pending = null
+  }
+
+  start() {
+    if(this.ready)return
+    this.worker = new Worker('/engine/stockfish-19-lite-single.js')
     this.ready = new Promise((resolve, reject) => {
+      this.finishReady=resolve
       this.worker.onerror = () => {
         const error = new Error('Stockfish could not start')
         reject(error)
         this.pending?.reject(error)
+        this.pending=null
       }
       this.worker.onmessage = ({ data }) => {
         for (const line of String(data).split('\n')) {
@@ -19,15 +25,17 @@ export class Engine {
             if (score && !/lowerbound|upperbound/.test(line)) {
               const rank = Number(line.match(/\bmultipv (\d+)/)?.[1] || 1)
               const data = {type:score[1],value:+score[2]}
-              const uci = line.match(/\bpv (\S+)/)?.[1]
+              const pv = line.match(/\bpv (.+)$/)?.[1].trim().split(/\s+/)
+              const depth = Number(line.match(/\bdepth (\d+)/)?.[1] || 0)
               if (rank===1) this.pending.score = data
-              if (uci) this.pending.lines.set(rank,{move:uci,score:data})
+              if (pv?.length) this.pending.lines.set(rank,{rank,move:pv[0],score:data,pv,depth})
             }
           }
           if (line.startsWith('bestmove ') && this.pending) {
             const request = this.pending
             this.pending = null
-            request.resolve({move:line.split(' ')[1],score:request.score,lines:[...request.lines.values()]})
+            request.resolve({move:line.split(' ')[1],score:request.score,
+              lines:[...request.lines.values()].sort((a,b)=>a.rank-b.rank)})
           }
         }
       }
@@ -71,7 +79,9 @@ export class Engine {
     return choice
   }
 
-  async search(fen,level,time,lines = 1) {
+  async search(fen,level,time,lines = 1,{depth,rootMove}={}) {
+    if(this.closed)return null
+    this.start()
     await this.ready
     if (this.closed) return null
     if (this.pending) throw new Error('Stockfish is already searching')
@@ -83,15 +93,18 @@ export class Engine {
     this.worker.postMessage('position fen ' + fen)
     return new Promise((resolve, reject) => {
       this.pending = { resolve, reject, lines:new Map() }
-      this.worker.postMessage('go movetime ' + time)
+      this.worker.postMessage('go movetime '+time+(depth?' depth '+depth:'')+
+        (rootMove?' searchmoves '+rootMove:''))
     })
   }
 
   close() {
     this.closed = true
+    this.finishReady?.()
     this.pending?.resolve(null)
+    this.pending=null
     this.weakResolve?.(null)
     this.beginner?.terminate()
-    this.worker.terminate()
+    this.worker?.terminate()
   }
 }

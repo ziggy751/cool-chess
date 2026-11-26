@@ -4,7 +4,7 @@ A browser chess game with a real-time 3D board, a keyboard-accessible 2D view, a
 
 ![Mountain Cabin in the Chess Evolution 3D showroom](public/world-previews/cabin.webp)
 
-[Play on Cloudflare](https://cool-chess.52560.workers.dev/) · [Immersive worlds](docs/immersive-worlds.md) · [Gameplay visibility and multiplayer](docs/gameplay-clarity.md)
+[Play on Cloudflare](https://cool-chess.52560.workers.dev/) · [Immersive worlds](docs/immersive-worlds.md) · [Gameplay visibility and multiplayer](docs/gameplay-clarity.md) · [Stockfish review](docs/stockfish-review.md) · [Christmas and Side Reel](docs/christmas-side-reel.md)
 
 ## Run locally
 
@@ -58,12 +58,12 @@ Right-drag to orbit, middle-drag to pan, and scroll to zoom. In Seated view, rig
 
 ## Graphics and modes
 
-- Twenty-five locations use 3D architecture and scenery, site-specific furniture and motion, and local reflection probes at compatible quality settings. The room and board are independently selectable. Existing location preferences are mapped to the closest available 3D location.
-- Forty-five piece editions include twenty new animated models. Their geometry, moving components, surface shaders and move and capture effects can be previewed in the showroom. The board library includes 36 finishes, 16 with animated shaders. Higher quality settings raise texture and shadow resolution. **Low** and **2D** are available for less powerful devices.
+- Twenty-nine locations use 3D architecture and scenery, site-specific furniture and motion, and local reflection probes at compatible quality settings. The room and board are independently selectable. Existing location preferences are mapped to the closest available 3D location.
+- Fifty-three piece editions include twenty new animated models. Their geometry, moving components, surface shaders and move and capture effects can be previewed in the showroom. The board library includes 42 finishes, 22 with animated shaders. Higher quality settings raise texture and shadow resolution. **Low** and **2D** are available for less powerful devices.
 - Standard chess, Chess960, King of the Hill, Three-Check, Crazyhouse, and a local Fog of War ruleset. Fog keeps standard legal movement and shows the side to move its own pieces and legal destinations. Move history is revealed at the end. Variant games are local, and online matches use standard chess.
 - The lower ten strengths use a separate Web Worker with progressively stronger tactical awareness and controlled mistakes. Higher levels and analysis use Stockfish Lite in a Web Worker. Elo labels are approximate difficulty targets.
 - Puzzles, a rotating daily selection, progressive Survival and themed Boss Battles. Finished standard games support move replay, PGN export, and Stockfish analysis. Sandbox accepts a FEN or the final position of an imported PGN.
-- Approximate analysis accuracy is the mean of `100 × exp(−centipawn_loss / 235)` for evaluated moves of each side. Engine scores are short-search estimates and can vary with hardware. Mate evaluations are capped to a fixed comparison score when calculating grades.
+- Stockfish review includes engine candidate lines, a clickable evaluation graph, move classifications, per-side accuracy and an opening explorer. See the [review controls and scoring method](docs/stockfish-review.md).
 - Local XP tracks eligible completed matches, AI wins, and first-time puzzle solves. Profile avatars unlock at player levels 2 and 4.
 - Elo is computed on the server for bullet, blitz, and rapid, with larger updates in early matches, rank bands, quarterly seasons, and persisted results.
 

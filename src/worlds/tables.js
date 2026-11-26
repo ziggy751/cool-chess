@@ -12,7 +12,9 @@ export function tableFactory(profile,id,detail) {
   const glass=new T.MeshPhysicalMaterial({color:0x70b7d8,roughness:.17,metalness:.23,clearcoat:.88})
   const teal=c.emit(0x6dcde7)
 
-  switch(id) {
+  const festive=id.startsWith('festive')
+  const base={festive:'timber','festive-workshop':'clockwork','festive-stone':'stone','festive-glass':'glass'}[id] || id
+  switch(base) {
     case 'console':
     case 'orbital': {
       c.softBox(10.6,.44,9.9,.14,0,-.585,0,dark)
@@ -49,8 +51,8 @@ export function tableFactory(profile,id,detail) {
       c.softBox(10.49,.41,9.93,.12,0,-.582,0,stone)
       c.softBox(10.04,.12,9.47,.07,0,-.85,0,dark)
       for(const [x,z] of [[-3.65,-2.68],[3.65,-2.68],[-3.65,2.68],[3.65,2.68]]){
-        c.softBox(id==='stone'?1.42:1.88,.22,1.57,.07,x,FLOOR+.106,z,stone)
-        if(id==='stone'){
+        c.softBox(base==='stone'?1.42:1.88,.22,1.57,.07,x,FLOOR+.106,z,stone)
+        if(base==='stone'){
           c.cylinder(.53,.68,2.55,x,-2.13,z,stone,18)
           for(let i=0;i<10;i++){
             const a=Math.PI*.2*i
@@ -90,6 +92,18 @@ export function tableFactory(profile,id,detail) {
       }
       if(id==='low')for(const x of [-4.62,4.62])c.box(.64,.37,8.09,x,FLOOR+.22,0,maple)
       if(id==='teak')for(let i=0;i<14;i++)c.box(.067,.052,9.8,(i-6.5)*.70,-.38,.04,brass)
+    }
+  }
+  if(festive){
+    const cloth=c.lit(id==='festive-glass'?0x4f7c78:0x642b38,{roughness:.85})
+    for(const side of [-1,1]){
+      c.box(9.88,.042,.032,0,-.365,side*5.02,brass)
+      c.box(.035,.045,9.64,side*5.27,-.365,0,brass)
+      c.box(9.68,.15,.039,0,-.61,side*5.06,cloth)
+      for(let i=-7;i<=7;i++){
+        const stone=c.mesh(new T.OctahedronGeometry(.092),i%2?brass:cloth,i*.63,-.609,side*5.115)
+        stone.scale.set(.52,1.07,.34)
+      }
     }
   }
   const used=new Set(c.boxes.keys())

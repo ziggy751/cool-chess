@@ -1,5 +1,6 @@
 import { Color, Vector3 } from 'three'
 import { indicatorColors, lastMoveColors } from './gameplay.js'
+import { grades } from './analysis.js'
 
 const svgNS='http://www.w3.org/2000/svg'
 const make=(name,attributes={})=>{
@@ -25,11 +26,15 @@ export class BoardOverlay {
     this.projected=new Vector3()
     this.arrow=make('polygon',{'class':'move-arrow',hidden:''})
     this.static.append(this.arrow)
+    this.classification=document.createElement('span')
+    this.classification.className='analysis-badge board-grade'
+    this.classification.hidden=true
+    host.append(this.classification)
     this.width=0
     this.height=0
   }
 
-  set({marks,arrow},settings){
+  set({marks,arrow,recommended,grade,gradeSquare},settings){
     this.settings=settings
     this.svg.classList.toggle('high-contrast',Boolean(settings.highContrast))
     this.svg.classList.toggle('no-motion',Boolean(settings.reduced))
@@ -57,6 +62,15 @@ export class BoardOverlay {
     }
     this.route=arrow?.map(center)
     this.arrow.toggleAttribute('hidden',!this.route)
+    this.arrow.classList.toggle('engine-arrow',Boolean(recommended))
+    this.gradePosition=grade && gradeSquare?center(gradeSquare):null
+    if(this.gradePosition && this.classification.dataset.grade!==grade){
+      const [mark,color]=grades[grade]
+      this.classification.textContent=mark
+      this.classification.dataset.grade=grade
+      this.classification.title=grade
+      this.classification.style.setProperty('--grade',color)
+    }
   }
 
   setPalette(palette){
@@ -81,8 +95,8 @@ export class BoardOverlay {
     this.pulse?.remove()
   }
 
-  project(x,z){
-    const p=this.projected.set(x,.116,z).project(this.camera)
+  project(x,z,height=.116){
+    const p=this.projected.set(x,height,z).project(this.camera)
     if(Math.abs(p.z)>1 || !Number.isFinite(p.x) || Math.abs(p.x)>18 || Math.abs(p.y)>18)return null
     return [(p.x+1)*this.width/2,(1-p.y)*this.height/2]
   }
@@ -94,9 +108,18 @@ export class BoardOverlay {
 
   update(time,enabled){
     this.svg.toggleAttribute('hidden',!enabled)
+    this.classification.hidden=true
     if(!enabled)return
     this.width=this.host.clientWidth
     this.height=this.host.clientHeight
+    if(this.gradePosition){
+      const p=this.project(...this.gradePosition,1.7)
+      if(p){
+        this.classification.style.left=p[0]+'px'
+        this.classification.style.top=p[1]+'px'
+        this.classification.hidden=false
+      }
+    }
     const size=this.settings?.indicatorSize ?? 1
     for(const {element,center:[x,z],kind} of this.marks.values()){
       const circular=['move','capture','check'].includes(kind)

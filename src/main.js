@@ -6,11 +6,14 @@ import '@fontsource/instrument-serif/latin-400.css'
 import './style.css'
 import './overhaul.css'
 import './gameplay.css'
+import './review.css'
+import './phone.css'
 import { Chess } from 'chess.js'
 import { makeChess, variants, fogVisibility } from './variants.js'
 import { Match, START, TIMES, opposite, validClock } from './rules.js'
 import { Board, glyph, pieces, squareAt, themeList, palettes } from './board.js'
-import { analyzeGame, accuracy, openingFor } from './analysis.js'
+import { AnalysisSession, openingBook, bookPosition, openingFor, presets, standardStart, whiteScore } from './analysis.js'
+import { Review, badge as gradeBadge, updateMeter } from './review.js'
 import { opponentAt, bosses } from './opponents.js'
 import { Engine } from './engine.js'
 import { Online } from './online.js'
@@ -33,6 +36,10 @@ const persist = (key,value) => localStorage.setItem('evolution-' + key,JSON.stri
 const defaults = {theme:'walnut',environment:'cabin',collection:'staunton',white:'ivory',black:'ebony',camera:'angled',quality:matchMedia('(pointer: coarse)').matches?'medium':'high',
   reduced:matchMedia('(prefers-reduced-motion: reduce)').matches, coords:true, autoQueen:false, volume:35, fov:0, frames:0, avatar:'G', motion:'glide',effect:'gold',overrides:{},cosmetics:true,reflections:true,shadows:true,particles:true,ambient:0,textureQuality:'auto',coach:true,premoves:true,rotate:false,confirm:false,highlight:'green',modelQuality:'high',table:'auto',lighting:'natural',worldDetail:'auto',worldMotion:true,motionSpeed:'normal',motionIntensity:1,captureIntensity:1}
 Object.assign(defaults,visibilityDefaults)
+Object.assign(defaults,{coaching:'review',analysisMeter:true,analysisSounds:false})
+Object.assign(defaults,{homeTheme:'standard',holidayMusic:false,holidayCelebrations:true,holidayLights:'slow',
+  phoneSide:'right',phoneSize:'regular',phoneCase:'standard',phoneVolume:.45,phoneMuted:true,
+  phoneAutopause:true,phoneShortcut:true})
 const settings = {...defaults,...read('settings',{})}
 settings.environment=locationFor(settings.environment).id
 const button = (name, label, id, style = '') => '<button type="button" class="' + style + '" id="' + id + '" aria-label="' + label + '" title="' + label + '">' + icon(name) + '</button>'
@@ -68,8 +75,27 @@ $('app').innerHTML = `
       <button data-nav="Ranked">${icon('crown')}<span>Ranked</span>${icon('arrow-up-right')}</button>
       <button data-nav="Puzzles">${icon('puzzle')}<span>Puzzles</span>${icon('arrow-up-right')}</button>
     </div>
+    <div class="season-controls">
+      <button type="button" class="secondary" id="season-theme" aria-pressed="false">Christmas menu</button>
+      <button type="button" class="secondary" id="season-audio" aria-pressed="false" hidden>Festive music</button>
+    </div>
   </section>
   <section id="studio-screen" aria-label="Collection showroom" hidden></section>
+  <section class="main review-screen" id="review-screen" aria-label="Game review" hidden>
+    <div class="page-heading"><div><h1>Game review</h1><p id="review-opening"></p></div>
+      <button type="button" class="secondary" id="review-close">Exit review</button></div>
+    <div class="review-layout"><section class="review-board">
+      <div class="review-position"><strong id="review-position"></strong><progress id="review-progress" value="0"></progress><span id="analysis-progress" aria-live="polite"></span></div>
+      <div id="review-stage"></div><div class="review-controls">
+        ${button('chevron-left','Previous review move','review-prev','secondary')}
+        ${button('chevron-right','Next review move','review-next','secondary')}
+        <button class="secondary" id="review-play">Auto replay</button>
+        <button class="secondary" id="review-flip">Flip review board</button>
+        <button class="secondary" id="review-save">Save analysis</button>
+        <button class="secondary" id="review-export">Export PGN</button>
+      </div></section><aside id="review-details" aria-label="Analysis details"></aside>
+    </div>
+  </section>
   <section class="main" id="match-screen" aria-label="Match" hidden>
     <div class="page-heading">
       <div><div class="breadcrumb">Play <span>/</span> <strong id="breadcrumb">Classic Chess</strong></div>
@@ -85,6 +111,7 @@ $('app').innerHTML = `
           <div id="fullscreen-turn" class="fullscreen-turn"></div>
 
           <div id="webgl" aria-label="Interactive 3D chessboard"></div>
+          <div id="analysis-meter" class="analysis-meter" hidden><strong></strong></div>
           <div class="world-loading" aria-live="polite">Loading location…</div>
           <div id="walk-controls" class="walk-controls" role="group" aria-label="Walk controls">
             ${[['W','up','forward'],['A','left','left'],['S','down','back'],['D','right','right']].map(([key,direction,label])=>
@@ -111,13 +138,15 @@ $('app').innerHTML = `
           </div>
         </div></div>
         <div id="player" class="player"></div>
-        <div id="pocket" class="pocket" hidden></div><div class="under-board"><span id="match-meta"></span><span id="room-meta"></span></div>
+        <div id="pocket" class="pocket" hidden></div><div class="under-board"><span id="match-meta"></span><span id="room-meta"></span>
+          ${button('smartphone','Open Side Reel phone','phone-toggle','icon-button phone-toggle')}</div>
         <div class="premove-banner" id="premove-banner" hidden><span></span><button type="button" id="cancel-premove">Cancel premove</button></div>
       </section>
       <aside class="match-panel" aria-label="Match panel">
         <div class="match-header"><span class="match-icon">${icon('swords')}</span><div><h2>Match details</h2><p id="match-type">Local game</p></div></div>
         <div class="status" id="status" aria-live="polite"></div>
         <p class="last-play" id="last-play" hidden></p>
+        <div id="live-coach" class="live-coach" hidden></div>
         <button class="secondary live-return" id="return-live" hidden>Return to live game</button>
         <div class="panel-tabs"><button data-tab="moves" class="current">Moves</button><button data-tab="game">Game info</button></div>
         <div id="panel-content" class="panel-content"></div>
@@ -129,6 +158,7 @@ $('app').innerHTML = `
           ${action('handshake','Offer draw','draw')}${action('flag','Resign','resign')}
         </div>
       </aside>
+      <aside id="match-phone" aria-label="Side Reel phone" hidden></aside>
     </div>
     <footer><small>CHESS EVOLUTION 3D</small><button data-nav="Controls">${icon('keyboard')} Keyboard shortcuts</button></footer>
   </section>
@@ -145,7 +175,9 @@ let level = 12, runLevel = 1, bossTheme = null, thinkTime = 450, engine, puzzle,
 let waiting = false, onlineState, onlineColor, linked = false, ping = 0, roomCode, motionKey = '', lastPly = 0
 let stateAt = performance.now(), firstMove = true, noticeTimer, lastResult
 let history = read('history',[])
-let cancelAnalysis
+let reviewReturn='home', analysisCoach, coachRequest, coachResult
+let phone, phoneLoading, seasonalMusic
+const liveGrades=new Map()
 let screen='home', studioReturn='home', hasMatch=false
 const previewPosition=new Chess()
 let experience = read('xp',0)
@@ -205,6 +237,7 @@ const online = new Online(message => {
   if (message.type === 'ladder') { renderLadder(message); return }
   if (message.type === 'joined') {
     const sameSeat=mode==='online' && roomCode===message.code && onlineColor===message.color
+    stopCoaching(true)
     stopEngine()
     mode = 'online'
     hasMatch=true
@@ -260,6 +293,7 @@ const online = new Online(message => {
     const divisionChanged=prior?.division!==message.division
     onlineState = message
     state=message.match || emptyRoom(message.minutes,message.increment)
+    if(screen==='review' && !analysisAllowed())showScreen('match')
     if(awaitingSnapshot){motionKey=state.fen;lastPly=state.moves.length}
     awaitingSnapshot=false
     stateAt = performance.now()
@@ -290,6 +324,7 @@ function startLocal(kind = 'local',minutes = defaultMinutes,fen,variant='standar
   const next = new Match({minutes,fen,variant,increment})
   online.leave()
   stopEngine()
+  stopCoaching(true)
   local = next
   mode = kind
   hasMatch=true
@@ -425,11 +460,15 @@ function playMove(move,confirmed=false) {
     resetCamera()
   }
   sound(result.captured ? 105 : 167,result.color)
+  stopCoaching()
+  coachResult=null
+  if(coachingAllowed())coachRequest={move:result,game:local}
   refreshLocal()
   if (versusAI()) requestMove()
 }
 
 function selectSquare(square) {
+  if(screen==='review'){review.select(square);return}
   if (!square || screen!=='match' || state.result) return
   if (!canPlay()) {
     if(!canPremove())return
@@ -512,22 +551,27 @@ function sound(frequency,color) {
 }
 
 function resetCamera() {
-  board?.reset(screen==='home'?'hero':screen==='studio'?'orbit':settings.camera,flipped)
+  board?.reset(screen==='home'?(settings.homeTheme==='christmas'?'holiday':'hero'):screen==='studio'?'orbit':screen==='review'?'angled':settings.camera,
+    screen==='review'?Boolean(review.flipped):flipped)
 }
 
 function showScreen(next) {
   closePhotography()
   if (screen==='studio') studio.close()
+  if(screen==='review' && next!=='review')review.close()
+  if(screen==='match' && next!=='match')stopCoaching()
+  if(next!=='match')phone?.close()
   screen=next
-  for (const value of ['home','studio','match']) $(value+'-screen').hidden=value!==next
+  for (const value of ['home','studio','match','review']) $(value+'-screen').hidden=value!==next
   $(next+'-stage').append(stage)
   document.documentElement.dataset.screen=next
   $('home-play').querySelector('span').textContent=hasMatch?'Resume match':'Play chess'
   document.querySelectorAll('.main-nav button').forEach(button=>{
-    button.classList.toggle('active',next==='studio' ? button.dataset.nav==='Collection' : next==='match' && button.dataset.nav==='Play')
+    button.classList.toggle('active',next==='studio'?button.dataset.nav==='Collection':
+      next==='review'?button.dataset.nav==='Analysis':next==='match' && button.dataset.nav==='Play')
   })
   board?.showBoard()
-  if (board) board.preview=next!=='match'
+  if (board) board.preview=!['match','review'].includes(next)
   resetCamera()
   applySettings()
   if (next==='studio') studio.open()
@@ -539,7 +583,9 @@ function openStudio() {
   showScreen('studio')
 }
 function applySettings() {
-  const theme=(screen==='match' && mode==='boss' && bossTheme?.theme) || settings.theme
+  const seasonal=screen==='home' && settings.homeTheme==='christmas'
+  if(screen==='home' && board && board.mode!==(seasonal?'holiday':'hero'))resetCamera()
+  const theme=seasonal?'festive-walnut':(screen==='match' && mode==='boss' && bossTheme?.theme) || settings.theme
   const [light,dark,frame]=palettes[theme] || palettes.walnut
   stage.dataset.theme=theme
   stage.style.setProperty('--light-square',light)
@@ -552,10 +598,15 @@ function applySettings() {
   stage.style.setProperty('--mark-opacity',settings.indicatorOpacity)
   stage.style.setProperty('--dot-size',settings.indicatorSize*25+'%')
   stage.classList.toggle('no-selection-outline',!settings.selectedOutline)
-  const useFlat = !board || (screen==='match' && flat)
+  const useFlat = !board || (['match','review'].includes(screen) && flat)
   stage.classList.toggle('is-flat',useFlat)
   stage.classList.toggle('no-coords',!settings.coords)
-  const environment = (screen==='match' && mode==='boss' && bossTheme?.environment) || settings.environment
+  const environment = seasonal?'christmas-cabin':(screen==='match' && mode==='boss' && bossTheme?.environment) || settings.environment
+  $('home-screen').dataset.menu=seasonal?'christmas':'standard'
+  $('season-theme').setAttribute('aria-pressed',String(seasonal))
+  $('season-audio').hidden=!seasonal
+  $('season-audio').setAttribute('aria-pressed',String(Boolean(settings.holidayMusic)))
+  syncSeasonalMusic()
   const world=locationFor(environment)
   roomSound(world.id,settings.ambient)
   const {name}=world
@@ -574,6 +625,7 @@ function applySettings() {
     board.reflections=settings.reflections
     board.textureQuality=settings.textureQuality
     board.particles=settings.particles
+    board.holidayLights=settings.holidayLights
     board.captureEffect=settings.effect
     board.moveStyle=settings.motion
     board.motionSpeed=cosmetic?settings.motionSpeed:'instant'
@@ -588,12 +640,15 @@ function applySettings() {
     board.setQuality(settings.quality)
     const detail=settings.worldDetail==='auto'?(settings.quality==='low'?'low':'high'):settings.worldDetail
     if(!useFlat)board.setWorld(world.id,settings.table,detail,settings.lighting)
-    board.setTheme(theme,settings.white,settings.black,environment,settings.collection,settings.overrides)
+    board.setTheme(theme,seasonal?'santa-shapes':settings.white,seasonal?'santa-shapes dark':settings.black,environment,
+      seasonal?'santa-shapes':settings.collection,seasonal?{}:settings.overrides)
   }
+  if(!['review','match'].includes(screen))$('analysis-meter').hidden=true
   renderBoard()
 }
 
 function renderBoard() {
+  if(screen==='review'){if(review.game)review.position();return}
   if (screen!=='match' && board) {
     board.render(previewPosition,null,[],null,false)
     return
@@ -623,6 +678,12 @@ function renderBoard() {
   const key = chess.fen()
   const selection=selected || pendingSquare
   const guidance=annotations({chess:masked,selection,queued:premove,targets,last,settings})
+  const feedback=coachingAllowed() && replay===null && coachResult
+  const coachedPiece=feedback && chess.get(feedback.move.to)
+  if(coachedPiece && feedback && coachedPiece.color===feedback.move.color){
+    guidance.grade=feedback.grade
+    guidance.gradeSquare=feedback.move.to
+  }
   if(!flat)board?.render(masked,selection,[],last,replay===null && key!==motionKey && moves.length===lastPly+1,visibility,guidance,settings)
   $('premove-banner').hidden=!premove
   $('premove-banner').querySelector('span').textContent=premove?'Premove · '+premove.from+' → '+premove.to:''
@@ -633,12 +694,12 @@ function renderBoard() {
   drawFlat(masked,guidance,visibility)
 }
 
-function drawFlat(masked,guidance,visibility) {
+function drawFlat(masked,guidance,visibility,orientation=flipped) {
   const grid = $('grid')
   const focused = grid.contains(document.activeElement) ? document.activeElement.dataset.square : null
   grid.replaceChildren()
   for (let row=0; row<8; row++) for (let col=0; col<8; col++) {
-    const square = squareAt(flipped ? 7-col : col,flipped ? 7-row : row)
+    const square = squareAt(orientation ? 7-col : col,orientation ? 7-row : row)
     const piece = masked.get(square)
     const tile = el('button','square ' + ((row+col)%2 ? 'dark-square' : 'light-square'))
     tile.dataset.square = square
@@ -650,9 +711,10 @@ function drawFlat(masked,guidance,visibility) {
     const details=kinds.map(kind=>({move:'Legal move',capture:'Legal capture',check:'In check',origin:'Last move origin',
       destination:'Last move destination',captured:'Capture destination',queued:'Queued premove',selected:'Selected'}[kind])).filter(Boolean)
     if(details.length)tile.setAttribute('aria-description',details.join('. '))
-    tile.tabIndex = square === (focused || (flipped ? 'h1' : 'a8')) ? 0 : -1
+    tile.tabIndex = square === (focused || (orientation ? 'h1' : 'a8')) ? 0 : -1
     if (piece) tile.append(el('span','piece-icon '+piece.color,glyph[piece.type]))
     for(const kind of kinds)tile.append(el('span','flat-indicator mark-'+kind))
+    if(guidance.grade && guidance.gradeSquare===square)tile.append(gradeBadge(guidance.grade))
     if (settings.coords && col === 0) tile.append(el('span','coord rank',square[1]))
     if (settings.coords && row === 7) tile.append(el('span','coord file',square[0]))
     tile.onclick = () => selectSquare(square)
@@ -673,12 +735,12 @@ function drawFlat(masked,guidance,visibility) {
   }
   if (focused) grid.querySelector('[data-square="'+focused+'"]')?.focus()
   if(guidance.arrow){
-    const coords=square=>[square.charCodeAt(0)-96.5,8.5-Number(square[1])].map(n=>flipped?8-n:n)
+    const coords=square=>[square.charCodeAt(0)-96.5,8.5-Number(square[1])].map(n=>orientation?8-n:n)
     const [[x1,y1],[x2,y2]]=guidance.arrow.map(coords)
     const angle=Math.atan2(y2-y1,x2-x1)
     const tail=Math.hypot(x2-x1,y2-y1)-.30
     if(tail>0){
-      const arrow=el('span','flat-arrow')
+      const arrow=el('span','flat-arrow'+(guidance.recommended?' engine-arrow':''))
       Object.assign(arrow.style,{left:x1*12.5+'%',top:y1*12.5+'%',width:tail*12.5+'%',transform:'rotate('+angle+'rad)'})
       grid.append(arrow)
     }
@@ -810,6 +872,8 @@ function renderTurn(){
   stage.dataset.activeSide=kind==='over' || replay!==null || (mode==='online' && !onlineState?.match)?'':(color===(flipped?'b':'w')?'near':'far')
   $('return-live').hidden=replay===null
   const activeNow=kind==='active' && side===color
+  phone?.update({label,ownTurn:activeNow || kind==='active' && mode==='local',key:state.fen,
+    blocked:mode==='ai-ranked' && !state.result || mode==='online' && !state.result})
   if(activeNow && previousTurn && previousTurn!==color && screen==='match'){
     if(settings.turnSound)playSound('ui',settings.volume*.7)
     if(settings.turnNotices && !premove && !stage.contains(document.activeElement) && $('toast').hidden)
@@ -871,8 +935,15 @@ function render() {
   $('resign').querySelector('span').textContent = state.result ? (mode==='survival' && state.result.winner==='w' && level<30 ? 'Next round' : 'Rematch') : 'Resign'
   $('resign').title = onlineState?.rematch?.length ? 'Rematch requested' : ''
   renderPanel()
+  if(screen==='match'){
+    showCoaching()
+    runCoaching()
+  }
   if (state.result && !lastResult && !['puzzle','training'].includes(mode)) {
     lastResult = state.result
+    if(screen==='match' && settings.holidayCelebrations && state.result.reason==='Checkmate' &&
+      (settings.theme.startsWith('festive-') || settings.environment.startsWith('christmas-')))
+      board?.celebrate(state.moves.at(-1)?.to)
     const matchId=mode==='online' ? onlineState?.matchId || roomCode+':'+onlineState?.seq : ladder.active?.id
     let change=mode==='online'?onlineState?.rating?.[onlineColor]:null
     if (mode==='ai-ranked') {
@@ -950,7 +1021,8 @@ function renderPanel() {
       const undo=el('button','secondary full','Undo last turn')
       undo.disabled=!state.moves.length
       undo.onclick=undoCasual
-      content.append(hint,undo)
+      if(settings.coaching!=='off')content.append(hint)
+      content.append(undo)
     }
     if (state.claimable && canPlay()) {
       const claim = el('button','secondary full','Claim draw')
@@ -981,6 +1053,8 @@ function renderPanel() {
       if (move.color === 'b') row.append(el('span','','—'))
     }
     const item = el('button',ply === index+1 ? 'chosen' : '',move.san)
+    const feedback=coachingAllowed() && liveGrades.get(move.after)
+    if(feedback)item.append(gradeBadge(feedback.grade))
     if(move.captured)item.dataset.tactical='capture'
     if(/[+#]/.test(move.san))item.dataset.tactical=move.san.includes('#')?'mate':'check'
     if(ply===index+1)item.setAttribute('aria-current','step')
@@ -1005,6 +1079,7 @@ function seek(ply) {
   renderBoard()
   renderPanel()
   renderTurn()
+  showCoaching()
 }
 
 function download(text) {
@@ -1045,8 +1120,6 @@ function clockOptions() {
 }
 function show(title,body) {
   const dialog = $('dialog')
-  cancelAnalysis?.()
-  cancelAnalysis = null
   $('dialog-content').innerHTML = '<div class="dialog-head"><h2></h2>'+button('x','Close','close-dialog')+'</div>'+body
   $('dialog-content').querySelector('h2').textContent = title
   $('close-dialog').onclick = () => dialog.close()
@@ -1246,6 +1319,7 @@ function resumeCasual() {
     const restored=Match.restore(saved.game)
     online.leave()
     stopEngine()
+    stopCoaching(true)
     local=restored
     local.started=Date.now()
     mode=saved.mode
@@ -1270,6 +1344,7 @@ function resumeCasual() {
 function undoCasual() {
   if(mode!=='ai' || state.result || !state.moves.length)return
   stopEngine()
+  stopCoaching(true)
   const saved=local.save()
   const rewind=state.moves.at(-1)?.color==='b'?2:1
   local=Match.restore({...saved,moves:saved.moves.slice(0,-rewind),clocks:local.remaining(),started:Date.now()})
@@ -1404,6 +1479,7 @@ function settingsDialog() {
     <label>Indicator size<input type="range" min=".65" max="1.5" step=".01" data-setting="indicatorSize" value="${settings.indicatorSize}"></label>
     <label>Indicator opacity<input type="range" min=".35" max="1" step=".01" data-setting="indicatorOpacity" value="${settings.indicatorOpacity}"></label>
     ${choice('motionSpeed','Move animation speed',moveSpeeds)}
+    ${choice('coaching','AI coaching',{review:'Post-game review only',instant:'Instant feedback',detailed:'Detailed coaching',off:'Disabled'})}
     </div>
     <div class="settings-toggles">${[
       ['showLegal','Legal move indicators'],['overlayIndicators','Emphasize indicators over effects'],
@@ -1411,6 +1487,7 @@ function settingsDialog() {
       ['showCaptures','Capture indicators'],['showCheck','Check highlighting'],['highContrast','High contrast'],
       ['turnNotices','Turn and move notifications'],['turnSound','Your turn sound'],['captureSound','Capture sound'],
       ['coords','Board coordinates'],['reduced','Reduced motion'],['premoves','Premoves'],['coach','Move explanations'],
+      ['analysisMeter','Evaluation bar'],['analysisSounds','Analysis sounds'],
     ].map(([id,label])=>checkbox(id,label)).join('')}</div></div></details>
     <details class="visibility-settings"><summary>Camera, graphics and audio</summary><div class="list"><div class="two-fields"><label>Camera<select data-setting="camera">${options(Object.entries(cameras),settings.camera)}</select></label>
     <label>Graphics<select data-setting="quality">${options([['low','Performance'],['medium','Balanced'],['high','High'],['ultra','Ultra'],['photo','Cinematic'],['custom','Custom']],settings.quality)}</select></label></div>
@@ -1422,7 +1499,12 @@ function settingsDialog() {
     <div class="two-fields"><label>Field of view<input data-setting="fov" type="range" min="-6" max="18" value="${settings.fov}"></label>
     <label>Frame rate limit<select data-setting="frames">${options([[0,'Display refresh'],[30,'30 FPS'],[60,'60 FPS'],[120,'120 FPS']],settings.frames)}</select></label></div>
     <label>Move sound volume<input data-setting="volume" type="range" min="0" max="100" value="${settings.volume}"></label>
-    <label>Room ambience<input data-setting="ambient" type="range" min="0" max="100" value="${settings.ambient}"></label></div></details>`)
+    <label>Room ambience<input data-setting="ambient" type="range" min="0" max="100" value="${settings.ambient}"></label></div></details>
+    <details class="visibility-settings"><summary>Christmas</summary><div class="list">
+    ${choice('homeTheme','Main menu theme',{standard:'Original',christmas:'Christmas'})}
+    ${choice('holidayLights','Christmas light pattern',{slow:'Warm twinkle',chase:'Quick twinkle',steady:'Steady'})}
+    ${checkbox('holidayMusic','Festive menu music')}${checkbox('holidayCelebrations','Festive checkmate effects')}
+    </div></details>`)
   bindSettings()
   for(const button of $('dialog-content').querySelectorAll('[data-visibility-preset]')){
     button.onclick=()=>{
@@ -1446,6 +1528,10 @@ function bindSettings() {
       persist('settings',settings)
       if (id==='camera') { flat=!board || settings.camera==='flat';resetCamera() }
       if(id==='premoves' && !settings.premoves){premove=null;pendingSquare=null}
+      if(id==='coaching'){
+        stopCoaching(true)
+        if(screen==='review' && settings.coaching==='off')showScreen(reviewReturn)
+      }
       applySettings()
       if(screen==='match')render()
       if (id==='ambient') {
@@ -1533,71 +1619,154 @@ async function photograph() {
   } catch { toast('Could not save the photograph') }
 }
 
-function openAnalysisLibrary() {
-  if(rankBlocked()){toast('Analysis is available after the ranked match');return}
-  if (state.result && state.moves.length && ['standard','fog'].includes(state.variant)) return openAnalysis()
-  show('Analysis','<div id="review-games" class="list"></div>')
-  const list=$('review-games')
-  for (const game of history.slice(0,20)) {
-    try {
-      const chess=new Chess()
-      chess.loadPgn(game.pgn)
-      const moves=chess.history({verbose:true})
-      if (!moves.length) continue
-      const review=el('button','secondary',new Date(game.date).toLocaleDateString()+' · '+game.result.reason)
-      review.onclick=()=>openAnalysis({variant:'standard',result:game.result,initial:moves[0].before,moves})
-      list.append(review)
-    } catch {}
-  }
-  if (!list.childElementCount) list.append(el('p','','Finish a match to review it here.'))
+function analysisAllowed(){
+  return settings.coaching!=='off' && !rankBlocked() && !(mode==='online' && !state.result)
 }
 
-function openAnalysis(snapshot=state) {
-  if(rankBlocked())return
-  if (!snapshot.result || !snapshot.moves.length || !['standard','fog'].includes(snapshot.variant)) return
-  show('Game analysis',`<p id="opening"></p><div class="analysis-graph"><canvas id="evaluation" width="620" height="154" aria-label="White evaluation graph"></canvas></div>
-    <p id="analysis-progress" aria-live="polite">Starting Stockfish…</p><p id="analysis-key-moves"></p><div id="analysis-rows" class="list"></div>`)
-  $('opening').textContent = openingFor(snapshot.moves) || 'Position review'
-  cancelAnalysis = analyzeGame(snapshot, rows => {
-    const graph = $('evaluation')
-    const ctx = graph.getContext('2d')
-    ctx.clearRect(0,0,graph.width,graph.height)
-    const middle = graph.height/2
-    ctx.strokeStyle = '#584d50'
-    ctx.beginPath()
-    ctx.moveTo(0,middle)
-    ctx.lineTo(graph.width,middle)
-    ctx.stroke()
-    ctx.lineWidth = 3
-    ctx.strokeStyle = '#d7b584'
-    ctx.beginPath()
-    ctx.moveTo(0,middle)
-    rows.forEach((row,index) => ctx.lineTo(((index+1)/snapshot.moves.length)*graph.width,middle-Math.tanh((row.white||0)/400)*(middle-8)))
-    ctx.stroke()
-    const latest = rows.at(-1)
-    const row = el('div','info-row')
-    row.append(el('span','',latest.index+'. '+latest.move.san),
-      el('strong','',latest.grade+(latest.best && latest.best!==latest.move.san?' · Best '+latest.best:'')))
-    if (snapshot===state) {
-      row.classList.add('review-row')
-      row.setAttribute('role','button')
-      row.tabIndex=0
-      const review=()=>{$('dialog').close();seek(latest.index)}
-      row.onclick=review
-      row.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();review()}}
+function coachingAllowed(){
+  return ['instant','detailed'].includes(settings.coaching) && ['local','sandbox','ai'].includes(mode) &&
+    state.variant==='standard' && !state.result
+}
+
+function stopCoaching(clear=false){
+  analysisCoach?.close()
+  analysisCoach=null
+  coachRequest=null
+  if(clear){coachResult=null;liveGrades.clear()}
+}
+
+async function runCoaching(){
+  if(!coachingAllowed() || !coachRequest || analysisCoach || (versusAI() && turn()==='b'))return
+  const {move,game}=coachRequest
+  coachRequest=null
+  const session=analysisCoach=new AnalysisSession(settings.coaching==='detailed'?presets.standard:presets.quick)
+  try{
+    const book=await openingBook().catch(()=>null)
+    if(analysisCoach!==session || !coachingAllowed())return
+    const index=state.moves.findIndex(item=>item.after===move.after)
+    const theory=state.initial===standardStart && index>=0 && bookPosition(state.moves.slice(0,index+1),book).node
+    const row=await session.evaluate(move,Boolean(theory))
+    if(analysisCoach!==session || !row || game!==local || screen!=='match' || !coachingAllowed())return
+    const fen=state.fen
+    const score=fen===move.after?row.after:whiteScore(fen,(await session.search(fen))?.score)
+    if(analysisCoach!==session || !coachingAllowed() || state.fen!==fen)return
+    coachResult={...row,current:{fen,score}}
+    liveGrades.set(move.after,row)
+    if(settings.analysisSounds)playSound(row.grade==='Brilliant' || row.grade==='Great'?'glass':'ui',settings.volume*.68)
+    showCoaching()
+    renderBoard()
+    renderPanel()
+  }catch(error){
+    if(analysisCoach===session)toast(error.message)
+  }finally{
+    session.close()
+    if(analysisCoach===session)analysisCoach=null
+  }
+}
+
+function showCoaching(){
+  const area=$('live-coach')
+  const row=coachingAllowed() && replay===null && coachResult
+  area.hidden=!row
+  area.replaceChildren()
+  updateMeter($('analysis-meter'),row && row.current.fen===state.fen?row.current.score:null,flipped,settings.analysisMeter)
+  if(!row)return
+  const title=el('strong','',''+row.move.san+' · '+row.grade)
+  area.append(gradeBadge(row.grade),title)
+  if(settings.coaching==='detailed'){
+    area.append(el('p','',row.explanation))
+    if(row.best){
+      const alternate=el('button','secondary','Explore '+row.best)
+      alternate.onclick=()=>{
+        const sessionGame={initial:row.move.before,moves:[],pgn:new Chess(row.move.before).pgn(),variant:'standard'}
+        openAnalysis(sessionGame,{rows:[],startScore:row.before,positionCandidates:row.candidates,preset:'standard'})
+      }
+      area.append(alternate)
     }
-    $('analysis-rows').append(row)
-    const critical=rows.reduce((worst,item)=>(item.loss || 0)>(worst?.loss || 0)?item:worst,null)
-    const mate=rows.find(item=>item.move.san.includes('#'))
-    $('analysis-key-moves').textContent=[
-      mate?'Checkmate · '+mate.move.san:null,
-      critical?'Largest missed opportunity · '+critical.move.san+(critical.best?' → '+critical.best:''):null,
-    ].filter(Boolean).join(' · ')
-    $('analysis-progress').textContent = 'Evaluating '+rows.length+' / '+snapshot.moves.length+' · White '+(accuracy(rows,'w')??'—')+'% · Black '+(accuracy(rows,'b')??'—')+'%'
-  },error=> {
-    if (error) $('analysis-progress').textContent = error.message
-    else $('analysis-progress').textContent = $('analysis-progress').textContent.replace('Evaluating','Evaluated')
-  })
+  }
+}
+
+function snapshotFrom(text,isFen=false){
+  const chess=isFen?new Chess(text):new Chess()
+  if(!isFen)chess.loadPgn(text)
+  const moves=chess.history({verbose:true})
+  return {variant:'standard',initial:moves[0]?.before || chess.fen(),moves,pgn:chess.pgn()}
+}
+
+const review=new Review($('review-screen'),{
+  exportGame:download,
+  saveReview:record=>{
+    const recent=read('reviews',[]).filter(item=>item.game.initial!==record.game.initial ||
+      item.game.pgn!==record.game.pgn || JSON.stringify(item.options)!==JSON.stringify(record.options))
+    try{
+      const newest=[record,...recent].slice(0,8)
+      while(newest.length>1 && JSON.stringify(newest).length>1_300_000)newest.pop()
+      persist('reviews',newest)
+      toast('Analysis saved in this browser')
+    }catch{toast('Browser storage is full')}
+  },
+  showPosition:({chess,flipped:orientation,score,marks,arrow,grade,square,selected})=>{
+    if(screen!=='review' || !analysisAllowed())return
+    const guidance={marks,arrow,recommended:true,grade,gradeSquare:square}
+    if(board && !flat){
+      if(board.reviewFlipped!==orientation){
+        board.reviewFlipped=orientation
+        resetCamera()
+      }
+      board.render(chess,selected || arrow?.[0],[],null,false,null,guidance,settings)
+    }else drawFlat(chess,guidance,null,orientation)
+    updateMeter($('analysis-meter'),score,orientation,settings.analysisMeter)
+  },
+})
+
+$('review-close').onclick=()=>{showScreen(reviewReturn);render()}
+
+function openAnalysisLibrary() {
+  if(settings.coaching==='off'){toast('Enable AI analysis in Settings to review a game');return}
+  if(!analysisAllowed()){toast('Analysis is available after the match finishes');return}
+  show('Analysis',`<form id="review-import" class="list"><label>FEN or PGN<textarea id="review-input" rows="4" placeholder="Paste a FEN position or PGN game"></textarea></label>
+    <div class="two-fields"><button class="secondary" type="submit" value="fen">Analyse FEN</button><button class="primary" type="submit" value="pgn">Analyse PGN</button></div><p id="review-import-error" role="alert"></p></form>
+    <h3>Saved analysis</h3><div id="review-saved" class="list"></div>
+    <h3>Recent games</h3><div id="review-games" class="list"></div>`)
+  $('review-import').onsubmit=event=>{
+    event.preventDefault()
+    const input=$('review-input').value.trim()
+    if(!input){$('review-import-error').textContent='Paste a position or game first.';return}
+    try {
+      const snapshot=snapshotFrom(input,event.submitter?.value==='fen')
+      if(event.submitter?.value!=='fen' && !snapshot.moves.length && !/^\s*\[FEN /m.test(input))throw Error('No valid moves or starting position found.')
+      openAnalysis(snapshot)
+    }catch(error){$('review-import-error').textContent=error.message}
+  }
+  const saved=$('review-saved')
+  for(const record of read('reviews',[])){
+    const label=new Date(record.date).toLocaleDateString()+' · '+record.game.moves.length+' plies'
+    const item=el('button','secondary',label)
+    item.onclick=()=>openAnalysis(record.game,record)
+    saved.append(item)
+  }
+  if(!saved.childElementCount)saved.append(el('p','','Saved reviews appear here.'))
+  const list=$('review-games')
+  for(const game of history.slice(0,20)){
+    try{
+      const snapshot=snapshotFrom(game.pgn)
+      if(!snapshot.moves.length)continue
+      const item=el('button','secondary',new Date(game.date).toLocaleDateString()+' · '+game.result.reason)
+      item.onclick=()=>openAnalysis(snapshot)
+      list.append(item)
+    }catch{}
+  }
+  if(!list.childElementCount)list.append(el('p','','Finished games appear here.'))
+}
+
+function openAnalysis(snapshot=state,record) {
+  if(settings.coaching==='off'){toast('Enable AI analysis in Settings to review a game');return}
+  if(!analysisAllowed() || !['standard','fog'].includes(snapshot.variant))return
+  const game={variant:snapshot.variant,initial:snapshot.initial,moves:snapshot.moves.slice(),pgn:snapshot.pgn || exportPgn()}
+  if(screen!=='review')reviewReturn=screen==='match'?'match':'home'
+  $('dialog').close()
+  showScreen('review')
+  review.open(game,record)
 }
 
 function stats() {
@@ -1663,13 +1832,54 @@ document.querySelectorAll('[data-tab]').forEach(button => {
 })
 $('dialog').addEventListener('close',() => {
   if(board)board.backdropPaused=$('dialog').open
-  cancelAnalysis?.()
-  cancelAnalysis = null
   if (waiting && mode !== 'online') { online.leave(); waiting = false }
 })
 $('mobile-menu').onclick = () => $('rail').classList.toggle('opened')
 $('new-game').onclick = () => setup()
 $('home-link').onclick=()=>showScreen('home')
+$('season-theme').onclick=()=>{
+  settings.homeTheme=settings.homeTheme==='christmas'?'standard':'christmas'
+  persist('settings',settings)
+  applySettings()
+}
+$('season-audio').onclick=()=>{
+  settings.holidayMusic=!settings.holidayMusic
+  persist('settings',settings)
+  applySettings()
+}
+function syncSeasonalMusic(){
+  if(screen!=='home' || settings.homeTheme!=='christmas' || !settings.holidayMusic || document.hidden){
+    seasonalMusic?.pause()
+    return
+  }
+  if(!seasonalMusic){
+    seasonalMusic=new Audio('/side-reel/noel.mp3')
+    seasonalMusic.loop=true
+    seasonalMusic.volume=.23
+  }
+  if(seasonalMusic.paused)seasonalMusic.play().catch(()=>{})
+}
+document.addEventListener('visibilitychange',syncSeasonalMusic)
+$('home-screen').addEventListener('pointerdown',()=>{if(!settings.holidayMusic)return;syncSeasonalMusic()})
+async function togglePhone(){
+  if(screen!=='match')return
+  try{
+    if(!phone){
+      phoneLoading ||= import('./phone.js').then(({createPhone})=>{
+        phone=createPhone($('match-phone'),settings,()=>persist('settings',settings))
+      })
+      await phoneLoading
+    }
+    if(screen!=='match')return
+    renderTurn()
+    phone.toggle()
+  }catch{
+    phoneLoading=null
+    toast('Side Reel could not open')
+  }
+}
+$('phone-toggle').setAttribute('aria-pressed','false')
+$('phone-toggle').onclick=togglePhone
 $('home-play').onclick=()=>{if(hasMatch)showScreen('match');else setup()}
 $('home-collection').onclick=openStudio
 $('panel-toggle').onclick=()=>{
@@ -1693,7 +1903,12 @@ for(const control of $('walk-controls').querySelectorAll('[data-walk]')){
     control.addEventListener(type,()=>board?.keys.delete(key))
   }
 }
-$('flip').onclick = () => { flipped = !flipped; resetCamera(); render() }
+$('flip').onclick = () => {
+  if(screen==='review'){review.flipped=!review.flipped;review.position();return}
+  flipped=!flipped
+  resetCamera()
+  render()
+}
 $('reset-camera').onclick = resetCamera
 $('fullscreen').onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen()
@@ -1736,7 +1951,13 @@ $('resign').onclick = () => {
   }
 }
 document.addEventListener('keydown',event => {
-  if ($('dialog').open || $('grid').contains(event.target) || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return
+  if ($('dialog').open || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return
+  if(screen==='match' && settings.phoneShortcut && event.key.toLowerCase()==='p' && !event.ctrlKey && !event.metaKey){
+    event.preventDefault()
+    togglePhone()
+    return
+  }
+  if($('grid').contains(event.target) || event.target.closest?.('#match-phone'))return
   if (event.key.toLowerCase()==='c' && screen==='match' && board) {
     const choices=Object.keys(cameras)
     settings.camera=choices[(choices.indexOf(settings.camera)+1)%choices.length]
@@ -1748,6 +1969,11 @@ document.addEventListener('keydown',event => {
     return
   }
   if(event.key==='Escape' && stage.classList.contains('photo-mode')){closePhotography();return}
+  if(screen==='review'){
+    if(event.key==='Escape')$('review-close').click()
+    if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();review.step(event.key==='ArrowLeft'?-1:1)}
+    return
+  }
   if(screen!=='match') return
   if(event.key==='Escape'){clearSelection();return}
   const target = {v:'view-mode',f:'flip',r:'reset-camera',ArrowLeft:'prev',ArrowRight:'next'}[event.key]

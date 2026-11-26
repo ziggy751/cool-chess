@@ -1,6 +1,8 @@
 // Time lives in one shared uniform. Material programs remain cached while
 // their animation is paused, including when the board is idle.
 const patterns = {
+  peppermint:'float band=sin((p.y+p.x*.47+p.z*.28)*30.-t*.16); float lace=smoothstep(-.23,.23,band); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.49,.022,.065),.67*lace); roughnessFactor*=.68+.21*lace;',
+  sugar:'vec3 q=floor(p*vec3(120.,157.,139.)); float sugar=fract(sin(dot(q,vec3(19.19,31.63,71.3)))*637.33); float lace=1.-smoothstep(.09,.25,abs(sin((p.y+p.x*.13)*44.+sin(p.z*13.)*1.1))); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.91,.68,.44),.31*lace + .22*step(.94,sugar)); totalEmissiveRadiance+=step(.976,sugar)*(.55+.45*sin(t+p.z*21.))*vec3(.11,.08,.045);',
   vortex: 'float a=atan(p.z,p.x);float ripple=pow(.5+.5*sin(a*4.-p.y*21.+t*1.2),7.); diffuseColor.rgb*=.56+.38*ripple; totalEmissiveRadiance+=ripple*vec3(.10,.06,.23);',
   grid: 'vec3 g=abs(sin(p*vec3(35.,43.,36.)+vec3(t,-t*.7,t*.36))); float scan=(1.-smoothstep(.12,.28,min(g.x,min(g.y,g.z))))*(.55+.45*cos(p.y*8.-t*3.2)); diffuseColor.rgb*=.91+.09*scan; totalEmissiveRadiance+=scan*vec3(.035,.17,.26);',
   goldflow: 'float f=abs(sin(p.z*23.+p.y*11.+sin(p.x*17.3+p.y*5.)*2.6)); float mask=1.-smoothstep(.03,.16,f); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.67,.35,.065),mask*.66); totalEmissiveRadiance+=mask*(.58+.42*cos(p.y*27.-t*.85))*vec3(.19,.067,.009);',

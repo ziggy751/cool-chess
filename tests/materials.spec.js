@@ -21,7 +21,7 @@ test('every animated collection and board renders two distinct shader phases', a
       return [...new Uint8Array(await crypto.subtle.digest('SHA-256',pixels))].join(',')
     }
     const staticItems=[]
-    const materials=Object.entries(premiumCollections).filter(([,set])=>set.category==='animated')
+    const materials=Object.entries(premiumCollections).filter(([,set])=>['animated','Christmas'].includes(set.category))
     for (const [id,set] of materials) {
       board.setTheme('walnut',set.white,set.black,'walnut',id)
       board.inspectPiece('k','w')
@@ -37,6 +37,6 @@ test('every animated collection and board renders two distinct shader phases', a
     }
     return {staticItems,materials:materials.length,boards:themes.length}
   })
-  expect(result).toEqual({staticItems:[],materials:31,boards:16})
+  expect(result).toEqual({staticItems:[],materials:39,boards:22})
   expect(errors).toEqual([])
 })

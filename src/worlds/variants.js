@@ -1,3 +1,4 @@
+import { decorateChristmas } from './holiday.js'
 import * as T from 'three'
 import { CEILING, FLOOR } from './craft.js'
 import { arch, ceilingStrips, chair, columns, glassWall, plant, rug, shell, sofa } from './architecture.js'
@@ -259,7 +260,7 @@ function sandstone(c,resort) {
   fall(c,{center:[0,FLOOR,-20],span:[46,19,19],count:85,color:0xe8b582,speed:.26,width:.15})
 }
 
-function winter(c,aurora) {
+function winter(c,aurora,christmas=false) {
   const floor=c.lit(aurora?0x4b5153:0x9198a0)
   const wall=c.lit(aurora?0x293c4b:0x43576a)
   const trim=c.trim(0x768c9b)
@@ -295,7 +296,7 @@ function winter(c,aurora) {
         gl_FragColor=vec4(mix(vec3(.10,.41,.28),vec3(.44,.25,.67),v.y),band*rays*.72*sin(3.14159*v.x));
       }`,
     })
-    c.mesh(geometry,mat,0,26,-59)
+    c.mesh(geometry,mat,0,christmas?16.5:26,-59)
     c.actions.push(time=>{mat.uniforms.time.value=time})
   }
 }
@@ -480,6 +481,10 @@ function fantasy(c,kind) {
 export function buildVariant(c,profile) {
   const id=profile.builder
   switch(id) {
+    case 'christmas-cabin':cabin(c);return decorateChristmas(c,id)
+    case 'christmas-workshop':mechanical(c,false);return decorateChristmas(c,id)
+    case 'christmas-aurora':winter(c,true,true);return decorateChristmas(c,id)
+    case 'christmas-village':return decorateChristmas(c,id)
     case 'royal':return royal(c)
     case 'garden':case 'courtyard':case 'forest':return gardens(c,id)
     case 'aquatic':return aquarium(c)

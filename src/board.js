@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { immersiveEditions } from './worlds/chess-editions.js'
+import { holidayEditions, holidayBoards } from './worlds/holiday-editions.js'
+import { holidayParts, holidayStep, holidayBoardTrim } from './worlds/holiday-pieces.js'
 import { pieceComponents, stepComponents } from './worlds/piece-components.js'
 import { locationFor } from './worlds/catalog.js'
 import { classicBoardNames } from './classic-board-names.js'
@@ -284,6 +286,10 @@ export const themeList = {...classicBoardNames,
   'gold-vein':'Gold-veined marble',projection:'Holographic grid',
   'aurora-glass':'Aurora glass',emerald:'Emerald crystal','woven-carbon':'Woven carbon',
   solar:'Solar flare',ink:'Ink shadow',sapphire:'Sapphire tide'}
+for(const [id,palette] of Object.entries(holidayBoards)){
+  palettes[id]=palette.slice(0,5)
+  themeList[id]=palette[5]
+}
 
 export const finishes = {
   ivory: [0xd4b992,.02,.34], ebony: [0x2b1e1c,.20,.25], gold: [0xdcad50,.85,.22],
@@ -315,6 +321,10 @@ for(const [id,edition] of Object.entries(immersiveEditions)){
   finishes[id]=[color,metal,rough,map,glass,pattern]
   finishes[id+' dark']=[new THREE.Color(color).multiplyScalar(.26).getHex(),metal,rough,map,glass*.64,pattern]
 }
+for(const [id,{color,dark,pattern,glass=0,metal=.16}] of Object.entries(holidayEditions)){
+  finishes[id]=[color,metal,.25,id==='nutcracker-set'?'wood':null,glass,pattern]
+  finishes[id+' dark']=[dark,metal,.29,id==='nutcracker-set'?'wood':null,glass*.81,pattern]
+}
 export const finishList = Object.keys(finishes)
 
 export class Board {
@@ -327,6 +337,7 @@ export class Board {
     this.pointers=new Set()
     this.keyboard = event => {
       if (!['roam','photo'].includes(this.mode) || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || document.querySelector('dialog[open]')) return
+      if(event.target.closest?.('#match-phone'))return
       if (/^Key[WASD]$/.test(event.code)) {
         event.preventDefault()
         if (event.type==='keydown') this.keys.add(event.code)
@@ -557,6 +568,10 @@ export class Board {
       }
       const cameraMoved = this.controls.enabled && this.controls.update(elapsed)
       const worldAnimated=this.world?.tick(elapsed,this.environmentMotion!==false && !this.reduced && !this.backdropPaused && !this.freezeWorld)
+      if(this.festiveTrim?.bulbs.visible && this.cosmetics && !this.reduced && !this.backdropPaused){
+        this.festiveTrim.bulbs.material.color.setRGB(1,.91,.80).multiplyScalar(this.holidayLights==='steady'?1:
+          .74+.26*Math.sin(time*(this.holidayLights==='chase'?.005:.0014)))
+      }
       if(this.world?.room && this.reflections!==false && this.quality!=='low' && (!this.preview || this.quality!=='medium')){
         const excluded=[this.table,this.solitaire,...[...this.stones.values()].map(value=>value.mesh),
           ...this.departing.map(value=>value.mesh),...this.effects.map(value=>value.burst)]
@@ -571,6 +586,7 @@ export class Board {
       if (this.solitaire.visible && !this.reduced) {
         this.soloMesh.rotation.y += elapsed*.32
         if(this.cosmetics)stepComponents(this.soloMesh.userData.components,this.time.value)
+        if(this.cosmetics)holidayStep(this.soloMesh.userData.holiday,this.time.value,false,this.holidayLights)
         if (this.soloMesh.userData.gear && this.cosmetics) this.soloMesh.userData.gear.rotation.y+=elapsed*1.1
         this.dirty=true
       }
@@ -591,6 +607,7 @@ export class Board {
       for (const entry of this.stones.values()) {
         if (this.dragEntry===entry) continue
         if(this.cosmetics && !this.reduced)stepComponents(entry.mesh.userData.components,this.time.value,Boolean(entry.flight))
+        if(this.cosmetics && !this.reduced)holidayStep(entry.mesh.userData.holiday,this.time.value,Boolean(entry.flight),this.holidayLights)
         if (entry.mesh.userData.gear && this.cosmetics && !this.reduced) entry.mesh.userData.gear.rotation.y+=elapsed*.74
         const flight = entry.flight
         if (flight && !this.reduced) {
@@ -599,11 +616,22 @@ export class Board {
           entry.mesh.position.lerpVectors(flight.from,entry.target,eased)
           entry.mesh.position.y+=Math.sin(Math.PI*t)*flight.height
           const pulse=Math.sin(Math.PI*t)
+          if(flight.style==='snow' && t>.32 && t<1 && !flight.trail && this.cosmetics && this.particles!==false){
+            flight.trail=true
+            this.burst(entry.mesh.position,'frost',4)
+          }
           const factor=1-flight.shrink*pulse
           entry.mesh.scale.set(factor,flight.style==='liquid'?1+pulse*.43:factor,factor)
           if(flight.style==='mechanical')entry.mesh.rotation.y=flight.angle+Math.sin(t*9)*.062*pulse
           if(flight.style==='water')entry.mesh.rotation.y=flight.angle+pulse*.24
-          if (t===1) {entry.flight=null;entry.mesh.scale.setScalar(1);entry.mesh.rotation.y=flight.angle}
+          if (t===1) {
+            entry.flight=null
+            entry.mesh.scale.setScalar(1)
+            entry.mesh.rotation.y=flight.angle
+            if(this.cosmetics && this.particles!==false && ['snow','globe','lights'].includes(flight.style))
+              this.burst(entry.target,flight.style==='lights'?'gold':'frost',8)
+            if(flight.promotion) this.burst(entry.target,'ribbon',14)
+          }
           else moving=true
         } else {
           entry.mesh.scale.setScalar(1)
@@ -746,6 +774,16 @@ export class Board {
     this.dirty = true
     this.key.shadow.needsUpdate=true
     const [light,dark,frame,type,pattern] = palettes[key] || palettes.walnut
+    if(holidayBoards[key] && !this.festiveTrim){
+      this.festiveTrim=holidayBoardTrim()
+      this.table.add(this.festiveTrim.group)
+    }
+    if(this.festiveTrim){
+      this.festiveTrim.group.visible=Boolean(holidayBoards[key])
+      this.festiveTrim.bulbs.visible=key==='festive-lights'
+      this.festiveTrim.landscape.visible=key==='festive-globe'
+    }
+    this.frame.position.y=key==='festive-globe'?-.458:-.148
     this.overlay.setPalette([light,dark])
     this.host.parentNode.style.setProperty('--light-square',light)
     this.host.parentNode.style.setProperty('--dark-square',dark)
@@ -761,9 +799,11 @@ export class Board {
       material.bumpScale = type==='stone' ? .022 : .009
       material.envMapIntensity = this.reflections ? 1.1 : .35
       material.metalness = ['liquid','mechanical','celestial'].includes(pattern)?.43:.03
+      material.transmission=key==='festive-globe'?.68:0
+      material.thickness=key==='festive-globe'?.19:0
       animateSurface(material,pattern,this.time)
       material.clearcoat = type==='marble' ? .82 : .38
-      material.roughness = type==='marble' ? .29 : .51
+      material.roughness = key==='festive-globe'?.17:type==='marble' ? .29 : .51
       material.needsUpdate = true
     })
     this.frame.material.map = textureFor(type)
@@ -832,6 +872,12 @@ export class Board {
       const component=pieceComponents(immersiveEditions[spec.collection],type)
       group.add(component.rotor)
       group.userData.components=component
+      this.animated=true
+    }
+    if(holidayEditions[spec.collection]){
+      const holiday=holidayParts(spec.collection,type,color,quality)
+      group.add(holiday)
+      group.userData.holiday=holiday
       this.animated=true
     }
     if (spec.secondary || spec.collection==='mechanical') {
@@ -995,6 +1041,7 @@ export class Board {
       close:[3.7,3.6,6.2,0,.12,2.1],roam:[7,1.61,9,0,1.05,0],photo:[6.6,3.6,9.2,0,.6,0],
       seated:[0,1.8,6.95,0,.28,-2.3],showcase:[3.15,9.1,14,0,.12,0],
       hero:[5.3,6.8,11.6,0,.12,0],specimen:[1.15,1.15,2.55,0,.68,0],
+      holiday:[6.5,5.6,15.8,2.3,2.7,-4.2],
     }
     const [x,y,z,tx,ty,tz]=poses[mode] || [0,10.9,11.6,0,.12,0]
     this.camera.position.set(x,y,z*(flipped?-1:1))
@@ -1006,7 +1053,7 @@ export class Board {
     this.controls.enablePan=mode!=='specimen'
     this.controls.mouseButtons.LEFT=mode==='specimen'?THREE.MOUSE.ROTATE:null
     this.controls.touches.ONE=mode==='specimen'?THREE.TOUCH.ROTATE:null
-    this.showcase = ['showcase','hero'].includes(mode)
+    this.showcase = ['showcase','hero','holiday'].includes(mode)
     this.controls.autoRotate=false
     this.camera.lookAt(this.controls.target)
     if(this.lookMode()){
@@ -1081,11 +1128,18 @@ export class Board {
     const from = entry.mesh.position.clone()
     const to = new THREE.Vector3(from.x<0?-5.2:5.2,-.3,from.z)
     this.departing.push({from,to,mesh:entry.mesh,started:performance.now()})
-    const style=this.captureEffect==='auto' ? immersiveEditions[this.spec(entry.type,entry.color).collection]?.effect || 'gold' : this.captureEffect
+    const edition=this.spec(entry.type,entry.color).collection
+    const style=this.captureEffect==='auto' ? (holidayEditions[edition] || immersiveEditions[edition])?.effect || 'gold' : this.captureEffect
     if (this.captureIntensity!==0 && style && style!=='none' && this.cosmetics && this.particles!==false) {
-      const color={gold:0xe1b86b,crystal:0xa7d9e5,signal:0x70a0f4,ember:0xc86741,cosmic:0xbdabff,water:0x81dadd,clockwork:0xc69a59,shadow:0x52577b}[style]
+      this.burst(from,style,Math.max(3,Math.round(18*(this.captureIntensity ?? 1))))
+    }
+  }
+
+  burst(from,style,count){
+      const color={gold:0xe1b86b,crystal:0xa7d9e5,signal:0x70a0f4,ember:0xc86741,cosmic:0xbdabff,water:0x81dadd,clockwork:0xc69a59,shadow:0x52577b,
+        frost:0xcdebf7,crumb:0xbc8a5f,ribbon:0xe5a277}[style]
       const geometry=new THREE.BufferGeometry()
-      const points=new Float32Array(3*Math.max(3,Math.round(18*(this.captureIntensity ?? 1))))
+      const points=new Float32Array(3*count)
       geometry.setAttribute('position',new THREE.BufferAttribute(points,3))
       const material=new THREE.PointsMaterial({color,size:.085,transparent:true,depthWrite:false,opacity:.7})
       const burst=new THREE.Points(geometry,material)
@@ -1093,7 +1147,13 @@ export class Board {
       burst.position.y+=.18
       this.scene.add(burst)
       this.effects.push({burst,points,start:performance.now(),style})
-    }
+  }
+
+  celebrate(square){
+    if(this.reduced || !this.cosmetics || this.particles===false || !square)return
+    this.burst(position(square),'ribbon',24)
+    this.burst(position(square),'frost',35)
+    this.dirty=true
   }
 
   updateEffects(time) {
@@ -1133,9 +1193,10 @@ export class Board {
   fly(entry) {
     if (!entry) return
     const spec=this.spec(entry.type,entry.color)
-    const style=spec.motion || (this.moveStyle==='auto'?immersiveEditions[spec.collection]?.motion:this.moveStyle) || 'glide'
+    const style=spec.motion || (this.moveStyle==='auto'?(holidayEditions[spec.collection] || immersiveEditions[spec.collection])?.motion:this.moveStyle) || 'glide'
     const properties={glide:[245,.13,0],lift:[285,.39,0],cinematic:[345,.31,.04],
-      teleport:[175,.06,.89],liquid:[275,.2,.26],hologram:[230,.14,.72],dissolve:[255,.13,.59],mechanical:[205,.12,.05],cosmic:[310,.28,.14],water:[240,.06,.10],shadow:[255,.09,.54],royal:[338,.31,.08]}
+      teleport:[175,.06,.89],liquid:[275,.2,.26],hologram:[230,.14,.72],dissolve:[255,.13,.59],mechanical:[205,.12,.05],cosmic:[310,.28,.14],water:[240,.06,.10],shadow:[255,.09,.54],royal:[338,.31,.08],
+      snow:[246,.18,.02],globe:[293,.205,.02],lights:[224,.10,0]}
     const [duration,height,shrink]=properties[style] || properties.glide
     const speed={instant:0,fast:.61,normal:1,cinematic:1.46}[this.motionSpeed] ?? 1
     if(!speed || this.reduced){entry.flight=null;return}
@@ -1176,6 +1237,7 @@ export class Board {
       }
       this.stones.set(destination,old)
       this.fly(old)
+      if(old.flight && last.promotion && this.collection==='santa-shapes')old.flight.promotion=true
       if(guidance)this.overlay.moved(last.from,destination,old.flight?.start || performance.now(),old.flight?.duration || 155,last.captured)
     }
     const active = new Set()
@@ -1191,6 +1253,7 @@ export class Board {
         if (entry) this.scene.remove(entry.mesh)
         const mesh=this.createPiece(type,color,spec)
         if (type === 'n') mesh.rotation.y = color === 'w' ? -.38 : Math.PI-.38
+        else if(holidayEditions[spec.collection] && color==='b')mesh.rotation.y=Math.PI
         mesh.position.copy(oldPosition || position(square))
         mesh.visible=!this.solitaire.visible
         this.scene.add(mesh)

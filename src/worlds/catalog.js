@@ -1,4 +1,8 @@
 const entries = [
+  ['christmas-cabin','Luxury Christmas Cabin','Christmas','christmas-cabin','festive',0x98aac9,0xffd5aa],
+  ['christmas-workshop','Santa’s Workshop','Christmas','christmas-workshop','festive-workshop',0x302940,0xffc69b],
+  ['christmas-village','Christmas Village','Christmas','christmas-village','festive-stone',0x202e4b,0xffd3ad],
+  ['christmas-aurora','Northern Lights Christmas','Christmas','christmas-aurora','festive-glass',0x152a44,0xb6dfd8],
   ['cabin','Mountain Cabin','Nature','cabin','timber',0x9bbbd5,0xd5e3ff],
   ['neon','Cyberpunk Penthouse','Futuristic','city','console',0x0b132b,0x82b7ff],
   ['orbit','Space Station','Futuristic','orbit','orbital',0x030610,0xa6c8ff],
@@ -35,12 +39,15 @@ export function locationFor(id) { return locations[id] || locations[aliases[id]]
 export const tables = {
   auto:'Location table',timber:'Walnut joinery',console:'Alloy console',orbital:'Orbital pedestal',
   stone:'Carved stone',low:'Pavilion joinery',glass:'Crystal platform',teak:'Yacht teak',
-  clockwork:'Brass workbench',concrete:'Cast concrete',
+  clockwork:'Brass workbench',concrete:'Cast concrete',festive:'Christmas marquetry',
+  'festive-workshop':'Workshop joinery','festive-stone':'Winter market stone','festive-glass':'Observatory glass',
 }
 
 export const lightingStyles={natural:'Location lighting',warm:'Warm key',cool:'Cool key',studio:'Soft studio'}
 
 export const curated = {
+  christmas:{name:'Christmas at the Cabin',environment:'christmas-cabin',theme:'festive-walnut',collection:'santa-shapes'},
+  snowglobes:{name:'Winter Keepsakes',environment:'christmas-aurora',theme:'festive-globe',collection:'snowglobe-set'},
   midnight:{name:'Midnight Luxury',environment:'neon',theme:'gold-vein',collection:'chrome'},
   cosmic:{name:'Cosmic Royalty',environment:'orbit',theme:'galaxy',collection:'nebula'},
   frozen:{name:'Frozen Paradise',environment:'cabin',theme:'glacier',collection:'frost'},

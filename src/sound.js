@@ -8,6 +8,10 @@ const timbres={
 let context, ambience
 const profiles={
   cabin:{cutoff:370,crackle:.11,x:-14.6,z:-16.8},
+  'christmas-cabin':{cutoff:380,crackle:.15,x:-14.6,z:-16.8},
+  'christmas-workshop':{cutoff:430,pitch:72,crackle:.07,x:0,z:-13},
+  'christmas-village':{cutoff:540,rhythm:.45,x:0,z:-16},
+  'christmas-aurora':{cutoff:255,rhythm:.29,x:0,z:-19},
   neon:{cutoff:760,rhythm:.34,x:5,z:-22},
   rain:{cutoff:1050,rhythm:.63,x:4,z:-22},
   manor:{cutoff:620,crackle:.17,x:-14.6,z:-16.8},

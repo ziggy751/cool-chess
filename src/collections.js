@@ -1,4 +1,5 @@
 import { immersiveEditions } from './worlds/chess-editions.js'
+import { holidayEditions } from './worlds/holiday-editions.js'
 
 // Cross-section of the weighted foot, in radius/height units. The vertical
 // and radial offsets define the waist and shoulders of each turned body.
@@ -29,7 +30,7 @@ export function profileFor(collection, profile, ring, base='classic') {
     mechanical:['chrome',.044,40],emerald:['crystal',.035,10],sapphire:['glass',-.02,12],
     phantom:['ceramic',-.03,50],celestial:['gold',.02,68],living:['marble',.03,64],
   }
-  const edition=immersiveEditions[collection]
+  const edition=immersiveEditions[collection] || holidayEditions[collection]
   const key=edition?.parent || collection
   const [parent,baseShift=0,segments] = newProfiles[key] || [key]
   const shift=baseShift+(edition?((collection.length%8)-3)*.011:0)
@@ -82,7 +83,7 @@ const editions = {
 }
 export const premiumCollections = Object.fromEntries(Object.entries(editions).map(([key,[label,white,black,detail,category]])=>
   [key,{label,white,black,detail,category}]))
-Object.assign(premiumCollections,immersiveEditions)
+Object.assign(premiumCollections,immersiveEditions,holidayEditions)
 Object.assign(collectionList,Object.fromEntries(Object.entries(premiumCollections).map(([key,item])=>[key,item.label])))
 
 export const baseStyles = { classic:'Original', bevel:'Machined bevel', stepped:'Stepped plinth', jewel:'Faceted collar' }
