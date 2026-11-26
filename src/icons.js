@@ -65,4 +65,12 @@ import music from 'lucide-static/icons/music.svg?raw'
 import clapperboard from 'lucide-static/icons/clapperboard.svg?raw'
 import lockKeyhole from 'lucide-static/icons/lock-keyhole.svg?raw'
 Object.assign(icons,{'youtube':youtube,'feather':feather,'route':route,'hash':hash,'triangle':triangle,'car-front':carFront,'blocks':blocks,'music':music,'clapperboard':clapperboard,'lock-keyhole':lockKeyhole})
+import target from 'lucide-static/icons/target.svg?raw'
+import timer from 'lucide-static/icons/timer.svg?raw'
+import circleDot from 'lucide-static/icons/circle-dot.svg?raw'
+import rocket from 'lucide-static/icons/rocket.svg?raw'
+import mountain from 'lucide-static/icons/mountain.svg?raw'
+import bell from 'lucide-static/icons/bell.svg?raw'
+import folder from 'lucide-static/icons/folder.svg?raw'
+Object.assign(icons,{target,timer,'circle-dot':circleDot,rocket,mountain,bell,folder})
 export const icon = name => icons[name] || ""

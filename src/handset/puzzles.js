@@ -10,19 +10,23 @@ const expected={left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown
 export function slide2048(board,direction){
   const output=Array(16).fill(0)
   let score=0
+  const moves=[]
   for(let line=0;line<4;line++){
     const order=Array.from({length:4},(_,n)=>direction==='left'?line*4+n:direction==='right'?line*4+3-n:
       direction==='up'?n*4+line:(3-n)*4+line)
-    const values=order.map(index=>board[index]).filter(Boolean)
-    const merged=[]
+    const values=order.filter(index=>board[index])
+    let position=0
     for(let n=0;n<values.length;n++){
-      const value=values[n]
-      if(value===values[n+1]){merged.push(value*2);score+=value*2;n++}
-      else merged.push(value)
+      const start=values[n],target=order[position++],second=values[n+1],value=board[start]
+      if(value===board[second]){
+        output[target]=value*2;score+=value*2
+        moves.push({start:second,target,value,merged:true})
+        n++
+      }else output[target]=value
+      moves.push({start,target,value,merged:value!==output[target]})
     }
-    order.forEach((index,n)=>{output[index]=merged[n] || 0})
   }
-  return {board:output,score,changed:board.some((value,i)=>value!==output[i])}
+  return {board:output,score,changed:board.some((value,i)=>value!==output[i]),moves}
 }
 
 function addNumber(board){
@@ -96,15 +100,27 @@ export function mount(host,{id,settings}){
     return !game.tray.some(id=>id!==null && cells.some((_,index)=>
       blockPlacement(game.board,shapes[id],index%8,Math.floor(index/8))))
   }
-  function draw(changed=new Set()){
+  function draw(changed=new Set(),movement=[]){
     host.dataset.puzzleTheme=theme
     board.classList.toggle('is-paused',paused)
     for(const [index,cell] of cells.entries()){
       const value=game.board[index]
+      for(const old of cell.getAnimations())old.cancel()
       cell.dataset.value=value || ''
       if(numbers)cell.textContent=value || ''
       cell.classList.toggle('tile-active',Boolean(value))
-      if(changed.has(index) && !settings.phoneReduced && !settings.reduced)cell.animate([{opacity:.35,scale:.8},{opacity:1,scale:1}],{duration:170})
+      if(changed.has(index) && !settings.phoneReduced && !settings.reduced){
+        const tile=movement.find(move=>move.target===index && move.start!==index)
+        const dx=tile?((tile.start%size)-(index%size))*108:0
+        const dy=tile?(Math.floor(tile.start/size)-Math.floor(index/size))*108:0
+        if(numbers && tile)cell.animate([
+          {transform:'translate('+dx+'%, '+dy+'%)',zIndex:1,opacity:.76},
+          {transform:tile.merged?'scale(1.06)':'none',zIndex:1,opacity:1},
+          {transform:'none',zIndex:1},
+        ],{duration:170,easing:'ease-out'})
+        else if(!numbers && !value)cell.animate([{background:'#ffdfa3'},{background:'#e5a86e'},{opacity:1}],{duration:380})
+        else cell.animate([{opacity:.42,scale:.85},{opacity:1,scale:1}],{duration:145})
+      }
     }
     score.textContent=String(game.score)
     if(numbers)return
@@ -128,8 +144,14 @@ export function mount(host,{id,settings}){
           drag=[event.clientX,event.clientY]
           item.setPointerCapture(event.pointerId)
         }
+        item.onpointermove=event=>{
+          if(!drag || Math.hypot(event.clientX-drag[0],event.clientY-drag[1])<8)return
+          const bounds=board.getBoundingClientRect()
+          markPlacement(shapes[id],Math.floor((event.clientX-bounds.left)/bounds.width*8),Math.floor((event.clientY-bounds.top)/bounds.height*8))
+        }
         item.onpointerup=event=>{
           if(!drag)return
+          markPlacement([])
           const moved=Math.hypot(event.clientX-drag[0],event.clientY-drag[1])>9
           drag=null
           if(moved){
@@ -137,10 +159,15 @@ export function mount(host,{id,settings}){
             place(Math.floor((event.clientX-bounds.left)/bounds.width*8),Math.floor((event.clientY-bounds.top)/bounds.height*8))
           }
         }
-        item.onpointercancel=()=>{drag=null}
+        item.onpointercancel=()=>{drag=null;markPlacement([])}
       }
       tray.append(item)
     }
+  }
+  function markPlacement(shape,x=0,y=0){
+    const legal=Boolean(shape.length && blockPlacement(game.board,shape,x,y))
+    const ids=new Set(shape.filter(([dx,dy])=>x+dx>=0 && y+dy>=0 && x+dx<8 && y+dy<8).map(([dx,dy])=>(y+dy)*8+x+dx))
+    for(const [i,cell] of cells.entries())cell.dataset.preview=ids.has(i)?legal?'yes':'no':''
   }
   function announce(message){
     clearTimeout(statusTimer)
@@ -174,7 +201,7 @@ export function mount(host,{id,settings}){
     game.board=next.board
     updateScore(next.score)
     finishMove()
-    draw(changed)
+    draw(changed,next.moves)
   }
   function setPaused(value){
     paused=value;pause.textContent=value?'Resume':'Pause';announce(value?'Paused':done?'No moves left':'Playing')

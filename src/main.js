@@ -8,6 +8,7 @@ import './overhaul.css'
 import './gameplay.css'
 import './review.css'
 import './phone.css'
+import './handset/studio.css'
 import { Chess } from 'chess.js'
 import { makeChess, variants, fogVisibility } from './variants.js'
 import { Match, START, TIMES, opposite, validClock } from './rules.js'
@@ -61,7 +62,7 @@ $('app').innerHTML = `
   <section id="home-screen" aria-label="Home">
     <div class="home-hero">
       <div id="home-stage"></div>
-      <div class="hero-copy"><div class="hero-eyebrow"><span></span> 3D CHESS SIMULATOR</div>
+      <div class="hero-copy">
         <h1>Chess<br>Evolution<span>.</span></h1>
         <div class="home-actions">
           ${action('play','Play chess','home-play','primary')}
@@ -73,6 +74,7 @@ $('app').innerHTML = `
       <div class="current-setup">${icon('box')}<div><small>CURRENT SETUP</small><strong id="home-setup"></strong></div></div>
       <button data-nav="AI opponents">${icon('bot')}<span>Play vs AI</span>${icon('arrow-up-right')}</button>
       <button data-nav="Ranked">${icon('crown')}<span>Ranked</span>${icon('arrow-up-right')}</button>
+      <button data-nav="Multiplayer">${icon('users')}<span>Multiplayer</span>${icon('arrow-up-right')}</button>
       <button data-nav="Puzzles">${icon('puzzle')}<span>Puzzles</span>${icon('arrow-up-right')}</button>
     </div>
     <div class="season-controls">
@@ -1357,7 +1359,7 @@ function undoCasual() {
 
 function openRanked() {
   if(rankBlocked()){toast('Finish or resign the ranked match first');return}
-  show('Ranked',`<div class="list"><label>Time control<select id="ranked-time">
+  show('Ranked',`<div class="list ranked-lobby"><label>Time control<select id="ranked-time">
     ${options([1,2,3,5,10,15].map(time=>[time,time+' min · '+divisionFor(time)]),5)}
     </select></label>
     ${action('swords','Find ranked match','ranked-queue','primary')}

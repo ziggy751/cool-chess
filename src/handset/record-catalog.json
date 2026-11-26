@@ -1,0 +1,142 @@
+[
+  {
+    "id": "viaduct",
+    "title": "Viaduct at Night",
+    "genre": "Brazilian phonk",
+    "artist": "Side Reel Studio",
+    "duration": 43.0,
+    "source": "/side-reel/records/viaduct.mp3",
+    "art": "/side-reel/records/viaduct.webp",
+    "color": "#6e2d42"
+  },
+  {
+    "id": "steering",
+    "title": "Opposite Lock",
+    "genre": "Drift phonk",
+    "artist": "Side Reel Studio",
+    "duration": 39.1,
+    "source": "/side-reel/records/steering.mp3",
+    "art": "/side-reel/records/steering.webp",
+    "color": "#452851"
+  },
+  {
+    "id": "switchback",
+    "title": "Switchback Signal",
+    "genre": "Hardstyle",
+    "artist": "Side Reel Studio",
+    "duration": 38.2,
+    "source": "/side-reel/records/switchback.mp3",
+    "art": "/side-reel/records/switchback.webp",
+    "color": "#263a79"
+  },
+  {
+    "id": "rollers",
+    "title": "Rollers at 3 AM",
+    "genre": "Drum and bass",
+    "artist": "Side Reel Studio",
+    "duration": 34.1,
+    "source": "/side-reel/records/rollers.mp3",
+    "art": "/side-reel/records/rollers.webp",
+    "color": "#1f5455"
+  },
+  {
+    "id": "heliopause",
+    "title": "Heliopause",
+    "genre": "Melodic house",
+    "artist": "Side Reel Studio",
+    "duration": 47.1,
+    "source": "/side-reel/records/heliopause.mp3",
+    "art": "/side-reel/records/heliopause.webp",
+    "color": "#4d4586"
+  },
+  {
+    "id": "pinch",
+    "title": "Pinch Point",
+    "genre": "Bass house",
+    "artist": "Side Reel Studio",
+    "duration": 46.0,
+    "source": "/side-reel/records/pinch.mp3",
+    "art": "/side-reel/records/pinch.webp",
+    "color": "#304b35"
+  },
+  {
+    "id": "lowline",
+    "title": "Low Line",
+    "genre": "Trap instrumental",
+    "artist": "Side Reel Studio",
+    "duration": 40.7,
+    "source": "/side-reel/records/lowline.mp3",
+    "art": "/side-reel/records/lowline.webp",
+    "color": "#453d76"
+  },
+  {
+    "id": "checkpoint",
+    "title": "Checkpoint Glass",
+    "genre": "UK garage",
+    "artist": "Side Reel Studio",
+    "duration": 44.6,
+    "source": "/side-reel/records/checkpoint.mp3",
+    "art": "/side-reel/records/checkpoint.webp",
+    "color": "#635034"
+  },
+  {
+    "id": "shuttle",
+    "title": "Shuttle Run",
+    "genre": "Electronic edit",
+    "artist": "Side Reel Studio",
+    "duration": 41.6,
+    "source": "/side-reel/records/shuttle.mp3",
+    "art": "/side-reel/records/shuttle.webp",
+    "color": "#783d39"
+  },
+  {
+    "id": "balcony",
+    "title": "Weather on the Balcony",
+    "genre": "Atmospheric electronic",
+    "artist": "Side Reel Studio",
+    "duration": 58.0,
+    "source": "/side-reel/records/balcony.mp3",
+    "art": "/side-reel/records/balcony.webp",
+    "color": "#304557"
+  },
+  {
+    "id": "overpass",
+    "title": "Empty Overpass",
+    "genre": "Synthwave",
+    "artist": "Side Reel Studio",
+    "duration": 54.8,
+    "source": "/side-reel/records/overpass.mp3",
+    "art": "/side-reel/records/overpass.webp",
+    "color": "#40428d"
+  },
+  {
+    "id": "paper",
+    "title": "Paper Satellites",
+    "genre": "Lo-fi",
+    "artist": "Side Reel Studio",
+    "duration": 68.0,
+    "source": "/side-reel/records/paper.mp3",
+    "art": "/side-reel/records/paper.webp",
+    "color": "#525c44"
+  },
+  {
+    "id": "zero",
+    "title": "The Zero Meridian",
+    "genre": "Cinematic instrumental",
+    "artist": "Side Reel Studio",
+    "duration": 63.6,
+    "source": "/side-reel/records/zero.mp3",
+    "art": "/side-reel/records/zero.webp",
+    "color": "#49333c"
+  },
+  {
+    "id": "bluehour",
+    "title": "Blue Hour Ferry",
+    "genre": "Chill house",
+    "artist": "Side Reel Studio",
+    "duration": 51.5,
+    "source": "/side-reel/records/bluehour.mp3",
+    "art": "/side-reel/records/bluehour.webp",
+    "color": "#325880"
+  }
+]

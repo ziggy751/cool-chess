@@ -10,13 +10,16 @@ const themes={
   deep:['Underwater fantasy','#31648a','#1b5671','#aaffd9','#183248'],
   chrome:['Chrome','#899aa8','#4f606d','#e7e9e2','#27343f'],
   desert:['Desert circuit','#d7a783','#91684d','#fae698','#513b38'],
+  marble:['Marble atrium','#bbb5c4','#817d98','#eee9df','#3d3d57'],
+  glass:['Smoked glass','#73abb8','#4d7480','#a5d9d1','#203649'],
+  cedar:['Cedar studio','#b58670','#745847','#e2b283','#3e3440'],
 }
 const directions={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}
 const config={
   wings:{instruction:'Flap through the gates. Earn 8 points for the kingfisher skin.',action:'Flap',themes:['grass','city','noel','stars','tropical','deep']},
   snake:{instruction:'Collect the glowing fruit. Arrow keys, swipe, or use the direction pad.',action:'Start',themes:['city','chrome','noel','grass']},
   runner:{instruction:'Jump over obstacles. Practice checkpoints carry no high score.',action:'Jump',themes:['city','stars','noel','deep']},
-  tower:{instruction:'Place each moving block. Only the overlap supports the next one.',action:'Place block',themes:['chrome','noel','deep','desert']},
+  tower:{instruction:'Place each moving block. Only the overlap supports the next one.',action:'Place block',themes:['chrome','glass','marble','cedar','noel']},
   racing:{instruction:'Steer to stay on the circuit. Complete three laps in race or time trial.',action:'Drive',themes:['city','noel','desert','grass']},
 }
 const clamp=(value,low,high)=>Math.max(low,Math.min(high,value))
@@ -69,6 +72,61 @@ function backdrop(ctx,palette,time,theme){
   ctx.globalAlpha=1
 }
 
+const birdPixels=[
+  '     ##      ',
+  '    #oo#     ',
+  '   #o@oo##   ',
+  '  #oo@ooo+## ',
+  '###ooooooo+# ',
+  '#oowwooooo## ',
+  ' #wwwooo##   ',
+  '  ###o##     ',
+  '    #+##     ',
+]
+function scenery(ctx,time,theme,palette){
+  const [,sky,land,ink,floor]=palette
+  const sun=theme==='stars'?'#ac9cdd':theme==='deep'?'#7fdece75':'#ffdda5b0'
+  if(!['city','noel'].includes(theme)){
+    ctx.fillStyle=sun;ctx.beginPath();ctx.arc(176,65,theme==='stars'?29:25,0,Math.PI*2);ctx.fill()
+  }
+  for(let j=0;j<3;j++){
+    ctx.fillStyle=[land+'66',land+'a9',floor+'a2'][j]
+    ctx.beginPath();ctx.moveTo(-8,height)
+    for(let x=-8;x<=width+8;x+=4){
+      const phase=x+time*(7+j*6)
+      const y=height-81+j*25-Math.sin(phase*.02+j*1.1)*(22-j*3)-Math.sin(phase*.052)*8
+      ctx.lineTo(x,y)
+    }
+    ctx.lineTo(width+8,height);ctx.fill()
+  }
+  if(theme==='noel' || theme==='deep'){
+    ctx.fillStyle=ink
+    for(let i=0;i<20;i++){
+      const x=Math.floor((i*51.31+time*(4+i%6))%width),y=Math.floor((i*39.62+time*(10+i%4))%height)
+      shade(ctx,ink+'a8',x,y,1+i%3,1+i%3)
+    }
+  }
+  shade(ctx,ink+'ad',0,height-10,width,2)
+  for(let x=-13;x<width;x+=13)shade(ctx,sky+'cc',x-time*25%13,height-7,5,2)
+}
+let arcadeContext
+function arcadeCue(kind,level){
+  if(!level)return
+  const Audio=window.AudioContext || window.webkitAudioContext
+  if(!Audio)return
+  try{
+    arcadeContext ||= new Audio()
+    arcadeContext.resume().catch(()=>{})
+    const t=arcadeContext.currentTime,wave=arcadeContext.createOscillator(),gain=arcadeContext.createGain()
+    const [from,to,duration]=kind==='point'?[570,895,.13]:kind==='end'?[180,56,.18]:[410,550,.07]
+    wave.type='triangle';wave.frequency.setValueAtTime(from,t);wave.frequency.exponentialRampToValueAtTime(to,t+duration)
+    gain.gain.setValueAtTime(Math.max(.001,level*.17),t);gain.gain.exponentialRampToValueAtTime(.001,t+duration)
+    wave.connect(gain).connect(arcadeContext.destination);wave.start();wave.stop(t+duration)
+    wave.onended=()=>{wave.disconnect();gain.disconnect()}
+  }catch{}
+}
+const runnerPatterns={city:[0,1,0,2,0,2,1,1],stars:[2,0,1,2,1,0,0,2],noel:[0,0,1,2,2,1,0,1],deep:[1,0,2,0,1,2,2,0]}
+
 const models={
   wings:{
     reset:()=>({y:133,vy:0,pipes:[],spawn:1,t:0}),
@@ -86,26 +144,35 @@ const models={
       s.pipes=s.pipes.filter(p=>p.x>-36)
       if(s.y<4 || s.y>height-9)game.end()
     },
-    draw(s,ctx,palette,skin){
+    draw(s,ctx,palette,skin,options){
+      scenery(ctx,s.t,options.theme,palette)
       for(const p of s.pipes){
-        rounded(ctx,p.x,0,33,p.c-p.gap/2,4,palette[2])
-        rounded(ctx,p.x,p.c+p.gap/2,33,height,4,palette[2])
-        shade(ctx,palette[3],p.x,p.c-p.gap/2-6,33,4)
-        shade(ctx,palette[3],p.x,p.c+p.gap/2+1,33,4)
+        const top=Math.ceil(p.c-p.gap/2),bottom=Math.ceil(p.c+p.gap/2)
+        for(const [y,h] of [[0,top],[bottom,height-bottom]]){
+          shade(ctx,'#172837',p.x+1,y,34,h)
+          shade(ctx,palette[2],p.x+3,y,26,h)
+          shade(ctx,'#ffffff35',p.x+7,y,3,h)
+          for(let n=8;n<h-5;n+=14)shade(ctx,'#141c3437',p.x+3,y+n,28,2)
+        }
+        shade(ctx,palette[3],p.x-2,top-6,38,5)
+        shade(ctx,palette[3],p.x-2,bottom,38,5)
+        shade(ctx,'#fffdf460',p.x-2,top-6,38,1)
       }
-      ctx.save();ctx.translate(62,s.y);ctx.rotate(clamp(s.vy*.0021,-.42,.47))
-      ctx.fillStyle=skin==='special'?'#6cb9f2':palette[3]
-      ctx.beginPath();ctx.ellipse(0,0,14,9,0,0,Math.PI*2);ctx.fill()
-      ctx.fillStyle='#f5f0da';ctx.beginPath();ctx.ellipse(-6,3,8,4,Math.sin(s.t*17)*.6,0,Math.PI*2);ctx.fill()
-      ctx.fillStyle='#142d34';ctx.beginPath();ctx.arc(7,-3,2,0,Math.PI*2);ctx.fill()
-      ctx.fillStyle='#fcb276';ctx.beginPath();ctx.moveTo(12,-2);ctx.lineTo(22,0);ctx.lineTo(12,4);ctx.fill();ctx.restore()
+      ctx.save();ctx.translate(Math.round(62),Math.round(s.y));ctx.rotate(clamp(s.vy*.0009,-.21,.28))
+      const colors={'#':'#182437',o:skin==='special'?'#56b5df':palette[3],w:'#f7f1db','@':'#172335','+':'#f39456'}
+      for(const [y,row] of birdPixels.entries())for(const [x,pixel] of [...row].entries()){
+        if(pixel===' ')continue
+        const wing=pixel==='w'?Math.round(Math.sin(s.t*25))*2:0
+        shade(ctx,colors[pixel],(x-6)*2.2,(y-4)*2.2+wing,2.3,2.3)
+      }
+      ctx.restore()
     },
   },
   snake:{
     reset(options){
       const n=Number(options.size),mid=Math.floor(n/2)
       return {n,body:[[mid-1,mid],[mid-2,mid],[mid-3,mid]],dir:[1,0],queued:null,elapsed:0,t:0,
-        obstacles:options.mode==='modern'?[[3,3],[3,4],[n-4,n-4],[n-4,n-5]]:[],food:[n-3,mid]}
+        previous:null,obstacles:options.mode==='modern'?[[3,3],[3,4],[n-4,n-4],[n-4,n-5]]:[],food:[n-3,mid]}
     },
     act(s,key){
       const next=directions[key]
@@ -121,6 +188,7 @@ const models={
       const same=point=>point[0]===next[0] && point[1]===next[1]
       const eats=same(s.food)
       if(next.some(pos=>pos<0 || pos>=s.n) || (eats?s.body:s.body.slice(0,-1)).some(same) || s.obstacles.some(same)){game.end();return}
+      s.previous=s.body.map(point=>point.slice())
       s.body.unshift(next)
       if(!eats){s.body.pop();return}
       game.add(1)
@@ -140,23 +208,42 @@ const models={
       for(const [x,y] of s.obstacles)rounded(ctx,x*cell+2,y*cell+offset+2,cell-4,cell-4,2,palette[2])
       ctx.fillStyle='#ff958b'
       ctx.beginPath();ctx.arc((x+.5)*cell,(y+.5)*cell+offset,cell*(.30+Math.sin(s.t*11)*.061),0,Math.PI*2);ctx.fill()
-      for(const [i,[x,y]] of s.body.entries()){
-        const color=skin==='special'?'#e7acdf':i===0?'#e6f8c9':palette[3]
-        rounded(ctx,x*cell+1.3,y*cell+offset+1.3,cell-2.6,cell-2.6,3,color)
+      const parts=s.body.map(([x,y],i)=>{
+        const [px,py]=s.previous?.[i] || [x,y]
+        const blend=s.previous?Math.min(1,s.elapsed/.16):1
+        return [(px+(x-px)*blend)*cell+cell/2,(py+(y-py)*blend)*cell+offset+cell/2]
+      })
+      ctx.strokeStyle=skin==='special'?'#d894cb':palette[3]
+      ctx.lineWidth=cell*.70;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();ctx.moveTo(...parts[0])
+      for(const center of parts.slice(1))ctx.lineTo(...center)
+      ctx.stroke()
+      const [cx,cy]=parts[0]
+      rounded(ctx,cx-cell*.4,cy-cell*.4,cell*.8,cell*.8,cell*.25,'#e6f8c9')
+      for(const factor of [-1,1]){
+        const [dx,dy]=s.dir
+        shade(ctx,'#243843',cx+dx*cell*.15+dy*factor*cell*.16-1,cy+dy*cell*.15-dx*factor*cell*.16-1,2,2)
       }
+      shade(ctx,'#fcdab5',(x+.48)*cell,(y+.31)*cell+offset,2,3)
     },
   },
   runner:{
-    reset:()=>({y:209,vy:0,t:0,blocks:[],spawn:1,grounded:true}),
+    reset:()=>({y:209,vy:0,t:0,blocks:[],spawn:1,grounded:true,pattern:0,dust:[]}),
     act(s,key){if(key==='Space' && s.grounded){s.grounded=false;s.vy=-298}},
     tick(s,dt,game){
       s.t+=dt;s.vy+=680*dt;s.y+=s.vy*dt
-      if(s.y>=209){s.y=209;s.vy=0;s.grounded=true}
+      if(s.y>=209){
+        if(!s.grounded)s.dust=Array.from({length:6},(_,i)=>({x:62,y:220,dx:-22-i*8,dy:-(i+2)*7,age:0}))
+        s.y=209;s.vy=0;s.grounded=true
+      }
+      for(const mote of s.dust){mote.x+=mote.dx*dt;mote.y+=mote.dy*dt;mote.age+=dt}
+      s.dust=s.dust.filter(mote=>mote.age<.32)
       s.spawn-=dt
       const speed={relaxed:101,standard:126,expert:167}[game.options.level]+Math.min(38,game.score*1.5)
       if(s.spawn<=0){
-        const pattern=Math.floor(Math.random()*3)
-        s.spawn=.99+pattern*.17
+        const order=runnerPatterns[game.options.theme]
+        const pattern=order[s.pattern++%order.length]
+        const step=game.options.level==='expert'?.70:game.options.level==='relaxed'?1.15:.97
+        s.spawn=step+pattern*.14
         s.blocks.push({x:width,w:pattern===2?31:17,h:pattern===1?29:22,p:pattern})
       }
       for(const block of s.blocks){
@@ -178,6 +265,8 @@ const models={
         ctx.fillStyle=palette[3];ctx.beginPath()
         ctx.moveTo(block.x,226);ctx.lineTo(block.x+block.w*.58,226-block.h);ctx.lineTo(block.x+block.w,226);ctx.fill()
       }
+      for(const mote of s.dust){ctx.globalAlpha=1-mote.age/.32;shade(ctx,palette[3],mote.x,mote.y,3,3)}
+      ctx.globalAlpha=1
       ctx.save();ctx.translate(62,s.y+5);ctx.rotate(s.grounded?0:s.t*4)
       if(skin==='special'){ctx.rotate(Math.PI/4)}
       rounded(ctx,-10,-10,20,20,3,'#a3f5e3')
@@ -213,7 +302,12 @@ const models={
         const color=i%2?palette[2]:palette[3]
         ctx.fillStyle=skin==='special'?'#c4ced4':color
         ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+8,y-7);ctx.lineTo(x+w+8,y-7);ctx.lineTo(x+w,y);ctx.fill()
-        shade(ctx,color,x,y,w,11)
+        const reflection=ctx.createLinearGradient(x,y,x+w,y+11)
+        reflection.addColorStop(0,'#ffffff20');reflection.addColorStop(.39,'#ffffff78');reflection.addColorStop(.53,'#212c4649');reflection.addColorStop(1,'#ffffff0b')
+        shade(ctx,color,x,y,w,11);shade(ctx,reflection,x,y,w,11)
+        if(palette===themes.cedar || palette===themes.marble)for(let n=0;n<5;n++)
+          shade(ctx,palette[4]+'55',x+n*5,y+2+n%4,w-n*5,1)
+        shade(ctx,'#f4f3ee67',x,y,w,1)
         ctx.globalAlpha=.45
         ctx.fillStyle=palette[4];ctx.beginPath();ctx.moveTo(x+w,y);ctx.lineTo(x+w+8,y-7);ctx.lineTo(x+w+8,y+4);ctx.lineTo(x+w,y+11);ctx.fill()
         ctx.globalAlpha=1
@@ -224,11 +318,12 @@ const models={
     },
   },
   racing:{
-    reset:()=>({theta:startLine,offset:0,velocity:0,t:0,lapAt:0,lap:0,best:null,opponents:[.34,.69]}),
-    act(s,key){if(key==='ArrowLeft')s.offset=clamp(s.offset-6,-25,25);if(key==='ArrowRight')s.offset=clamp(s.offset+6,-25,25)},
+    reset:()=>({theta:startLine,offset:0,steer:0,velocity:0,t:0,lapAt:0,lap:0,best:null,opponents:[.34,.69]}),
+    act(s,key){if(key==='ArrowLeft')s.steer=clamp(s.steer-6,-25,25);if(key==='ArrowRight')s.steer=clamp(s.steer+6,-25,25)},
     tick(s,dt,game){
       s.t+=dt
       const circuit=circuits[game.options.theme]
+      s.offset+=(s.steer-s.offset)*Math.min(1,dt*12)
       const out=Math.abs(s.offset)>13
       const pace=out ? .59 : circuit.speed-Math.abs(s.offset)*.010
       s.velocity+=(pace-s.velocity)*Math.min(1,dt*3.6)
@@ -286,7 +381,10 @@ const models={
         const [x,y]=trackPoint(circuit,angle,offset),[nextX,nextY]=trackPoint(circuit,angle+.02,offset)
         ctx.save();ctx.translate(x,y)
         ctx.rotate(Math.atan2(nextY-y,nextX-x)+Math.PI/2)
-        rounded(ctx,-5,-9,10,18,3,c);shade(ctx,'#d7eee8',-3,-5,6,4);shade(ctx,'#421b2a',-4,6,8,2);ctx.restore()
+        rounded(ctx,-6,-8,13,21,3,'#111723a0')
+        for(const x of [-6,4])for(const y of [-7,5])rounded(ctx,x,y,3,5,1,'#171826')
+        rounded(ctx,-5,-9,10,18,3,c);shade(ctx,'#fdf3db',-3,-8,6,1);shade(ctx,'#273440',-3,-4,6,6)
+        shade(ctx,'#a0c4c8',-2,-4,4,1);shade(ctx,'#7e334d',-4,6,8,2);ctx.restore()
       }
       if(options.mode!=='trial')s.opponents.forEach((angle,j)=>car(angle+startLine,(j-.5)*14,j?'#ec9cb9':'#91cbe7'))
       car(s.theta,s.offset,carPaint[skin] || carPaint.original)
@@ -343,7 +441,7 @@ export function mount(host,services){
     audio.setAttribute('aria-pressed','false')
     audio.onclick=()=>{
       if(!soundtrack){
-        soundtrack=new Audio('/side-reel/music/neon.mp3')
+        soundtrack=new Audio('/side-reel/records/shuttle.mp3')
         soundtrack.loop=true
         soundtrack.volume=settings.phoneVolume*.54
       }
@@ -358,15 +456,22 @@ export function mount(host,services){
   const game={score:0,options,status:text=>{status.textContent=text},
     add(value){
       this.score+=value;score.textContent=String(this.score)
+      if(settings.phoneArcadeSound)arcadeCue('point',settings.phoneVolume)
       showLapRecord()
       if(options.mode!=='practice' && this.score>record){
         record=this.score;best.textContent=String(record);store('best-'+id,record)
       }
-    },end(complete=false){finished=true;stop();if(!complete)status.textContent='Run complete';action.textContent='Play again'}
+    },end(complete=false){
+      finished=true;stop()
+      if(!complete)status.textContent='Run complete'
+      if(settings.phoneArcadeSound)arcadeCue('end',settings.phoneVolume)
+      action.textContent='Play again'
+    }
   }
   function draw(){
     const palette=themes[options.theme],skin=id==='wings' && record<8?'original':options.skin
-    backdrop(ctx,palette,state.t,options.theme)
+    if(id!=='wings')backdrop(ctx,palette,state.t,options.theme)
+    else shade(ctx,palette[1],0,0,width,height)
     gameModel.draw(state,ctx,palette,skin,options)
   }
   function stop(){running=false;cancelAnimationFrame(frame);soundtrack?.pause();pause.textContent='Resume'}
@@ -393,6 +498,7 @@ export function mount(host,services){
   function control(key){
     if(finished)reset()
     if(!running){start();pause.disabled=false}
+    if(id==='wings' && key==='Space' && settings.phoneArcadeSound)arcadeCue('action',settings.phoneVolume)
     gameModel.act(state,key,game)
   }
   action.onclick=()=>control('Space')
