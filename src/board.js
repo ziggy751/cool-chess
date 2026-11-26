@@ -4,6 +4,8 @@ import { pieceComponents, stepComponents } from './worlds/piece-components.js'
 import { locationFor } from './worlds/catalog.js'
 import { classicBoardNames } from './classic-board-names.js'
 import { animateSurface } from './surfaces.js'
+import { BoardOverlay } from './board-overlay.js'
+import { indicatorColors } from './gameplay.js'
 import { profileFor, premiumCollections } from './collections.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg'
@@ -352,7 +354,15 @@ export class Board {
     pmrem.dispose()
     host.append(this.renderer.domElement)
     this.camera = new THREE.PerspectiveCamera(40,1,.1,155)
+    this.overlay=new BoardOverlay(host,this.camera)
+    this.outline=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.ShaderMaterial({
+      side:THREE.BackSide,depthWrite:false,uniforms:{tint:{value:new THREE.Color('#90f0aa')}},
+      vertexShader:'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position+normalize(normal)*.023,1.);}',
+      fragmentShader:'uniform vec3 tint;void main(){gl_FragColor=vec4(tint,1.);\n#include <colorspace_fragment>\n}',
+    }))
+    this.outline.visible=false
     this.controls = new OrbitControls(this.camera,this.renderer.domElement)
+    this.controls.addEventListener('change',()=>{this.dirty=true})
     this.controls.enableDamping = true
     this.controls.enablePan = true
     this.controls.enableRotate = true
@@ -415,8 +425,6 @@ export class Board {
     const counts=Array(8).fill(0)
     this.markers = new Map()
     this.squareMarker = new THREE.PlaneGeometry(.97,.97)
-    this.captureMarker = new THREE.RingGeometry(.405,.48,40)
-    this.moveMarker = new THREE.CircleGeometry(.115,24)
     for (let row=0;row<8;row++) for (let col=0;col<8;col++) {
       const square = squareAt(col,row)
       const index=((row+col)%2)*4+((Math.floor(row/2)+Math.floor(col/2))%4)
@@ -569,7 +577,7 @@ export class Board {
       const capturing=this.departing.length>0
       for (let i=this.departing.length-1;i>=0;i--) {
         const capture = this.departing[i]
-        const t = this.reduced ? 1 : Math.min(1,(performance.now()-capture.started)/340)
+        const t = this.reduced ? 1 : Math.min(1,(performance.now()-capture.started)/275)
         capture.mesh.position.lerpVectors(capture.from,capture.to,1-(1-t)**3)
         capture.mesh.position.y += Math.sin(t*Math.PI)*.65
         capture.mesh.scale.setScalar(1-.66*t)
@@ -588,14 +596,14 @@ export class Board {
         if (flight && !this.reduced) {
           const t=Math.min(1,(time-flight.start)/flight.duration)
           const eased=t*t*(3-2*t)
-          entry.mesh.position.lerpVectors(flight.from,entry.target,flight.style==='teleport' ? Number(t>.44) : eased)
+          entry.mesh.position.lerpVectors(flight.from,entry.target,eased)
           entry.mesh.position.y+=Math.sin(Math.PI*t)*flight.height
           const pulse=Math.sin(Math.PI*t)
           const factor=1-flight.shrink*pulse
           entry.mesh.scale.set(factor,flight.style==='liquid'?1+pulse*.43:factor,factor)
           if(flight.style==='mechanical')entry.mesh.rotation.y=flight.angle+Math.sin(t*9)*.062*pulse
           if(flight.style==='water')entry.mesh.rotation.y=flight.angle+pulse*.24
-          if (t===1) {entry.flight=null;entry.mesh.scale.setScalar(1)}
+          if (t===1) {entry.flight=null;entry.mesh.scale.setScalar(1);entry.mesh.rotation.y=flight.angle}
           else moving=true
         } else {
           entry.mesh.scale.setScalar(1)
@@ -608,9 +616,12 @@ export class Board {
       }
       if (this.effects.length) this.updateEffects(time)
       if(capturing || moving || this.wasMoving || this.dragEntry || this.solitaire.visible && !this.reduced)this.key.shadow.needsUpdate=true
-      if (this.dirty || cameraMoved || worldAnimated || capturing || moving || this.wasMoving || (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)) {
+      const redraw=this.dirty || cameraMoved || worldAnimated || capturing || moving || this.wasMoving ||
+        (this.animated && this.cosmetics && !this.reduced && !this.backdropPaused)
+      if(redraw || (!this.backdropPaused && this.overlay.flight)){
         this.lastFrame = time
-        this.renderFrame()
+        if(redraw)this.renderFrame()
+        this.overlay.update(time,!this.preview && this.mode!=='photo' && !this.solitaire.visible)
         this.dirty = false
       }
       this.wasMoving = moving
@@ -735,6 +746,7 @@ export class Board {
     this.dirty = true
     this.key.shadow.needsUpdate=true
     const [light,dark,frame,type,pattern] = palettes[key] || palettes.walnut
+    this.overlay.setPalette([light,dark])
     this.host.parentNode.style.setProperty('--light-square',light)
     this.host.parentNode.style.setProperty('--dark-square',dark)
     this.host.parentNode.style.setProperty('--stage',frame)
@@ -815,6 +827,7 @@ export class Board {
     pad.position.y=.003
     if (type==='p') pad.scale.set(.82,1,.82)
     group.add(model,pad)
+    group.userData.pickMesh=model
     if(immersiveEditions[spec.collection]){
       const component=pieceComponents(immersiveEditions[spec.collection],type)
       group.add(component.rotor)
@@ -1053,7 +1066,8 @@ export class Board {
   hit(event,dragging=false) {
     this.rayFor(event)
     if(!dragging){
-      const figures=this.ray.intersectObjects([...this.stones.values()].map(piece=>piece.mesh),true)
+      const figures=this.ray.intersectObjects([...this.stones.values()]
+        .filter(piece=>piece.mesh.visible && !piece.flight).map(piece=>piece.mesh.userData.pickMesh),false)
       for(let object=figures[0]?.object;object && object!==this.scene;object=object.parent){
         if(object.userData.square)return object.userData.square
       }
@@ -1086,7 +1100,7 @@ export class Board {
     this.dirty=true
     for(let i=this.effects.length-1;i>=0;i--) {
       const {burst,points,start,style}=this.effects[i]
-      const t=Math.min(1,(time-start)/420)
+        const t=Math.min(1,(time-start)/310)
       for(let j=0;j<points.length/3;j++) {
         const angle=j*2.39996
         const range=.15+t*((style==='water'?1.12:.68)+(j%4)*.13)
@@ -1104,6 +1118,7 @@ export class Board {
   }
 
   clearVisualMotion() {
+    this.overlay.clearMotion()
     for(const entry of this.stones.values())entry.flight=null
     for(const {mesh} of this.departing)this.scene.remove(mesh)
     this.departing.length=0
@@ -1126,15 +1141,16 @@ export class Board {
     if(!speed || this.reduced){entry.flight=null;return}
     const intensity=this.motionIntensity ?? 1
     entry.flight={style,from:entry.mesh.position.clone(),start:performance.now(),duration:duration*speed,
-      height:(height+(entry.type==='n'?.12:0))*intensity,shrink:shrink*intensity,angle:entry.mesh.rotation.y}
+      height:(height+(entry.type==='n'?.12:0))*intensity,shrink:Math.min(.18,shrink*intensity),angle:entry.mesh.rotation.y}
   }
 
-  render(chess,selected,legal,last,animate,visible) {
+  render(chess,selected,legal,last,animate,visible,guidance,preferences) {
     const fen=chess.fen?.()
     const reconciled=fen && this.displayedFen && this.displayedFen!==fen && !animate
     if (reconciled) this.clearVisualMotion()
     if(fen)this.displayedFen=fen
     this.currentSelected=selected
+    if(guidance)this.overlay.set(guidance,preferences)
     this.dirty = true
     this.key.shadow.needsUpdate=true
     if (animate && last && this.stones.has(last.from)) {
@@ -1160,6 +1176,7 @@ export class Board {
       }
       this.stones.set(destination,old)
       this.fly(old)
+      if(guidance)this.overlay.moved(last.from,destination,old.flight?.start || performance.now(),old.flight?.duration || 155,last.captured)
     }
     const active = new Set()
     for (const piece of chess.board().flat().filter(Boolean)) {
@@ -1182,22 +1199,27 @@ export class Board {
       }
       entry.mesh.userData.square = square
       entry.target.copy(position(square)).setY(square===selected ? .29 : .10)
-      if(reconciled)entry.mesh.position.copy(entry.target)
+      if(reconciled || this.motionSpeed==='instant' || this.reduced)entry.mesh.position.copy(entry.target)
     }
     for (const [square,entry] of this.stones) if (!active.has(square)) {
       this.scene.remove(entry.mesh)
       this.stones.delete(square)
     }
     for (const [square,mark] of this.markers) {
-      const piece = chess.get(square)
-      const inCheck = piece?.type === 'k' && piece.color === chess.turn() && chess.isCheck()
-      const hint={blue:0x77baf1,gold:0xe4bf70,green:0x85c8a2}[this.highlight] || 0x85c8a2
-      const color = inCheck ? 0xc85150 : square === selected ? hint : legal.includes(square) ? hint
-        : last && [last.from,last.landing || last.to].includes(square) ? 0xe6ad4f : visible && !visible.has(square) ? 0x10121b : null
-      mark.visible = color !== null
-      mark.material.opacity = visible && !visible.has(square) ? .82 : .48
-      if (color !== null) mark.material.color.setHex(color)
-      mark.geometry=legal.includes(square)?(piece?this.captureMarker:this.moveMarker):this.squareMarker
+      const obscured=visible && !visible.has(square)
+      mark.visible=Boolean(obscured || square===selected && guidance)
+      mark.material.color.set(obscured?0x10121b:indicatorColors[preferences?.highlight] || '#90f0aa')
+      mark.material.opacity=obscured?.82:.27
+    }
+    this.outline.removeFromParent()
+    const checkSquare=guidance?.marks.find(([,kind])=>kind==='check')?.[0]
+    const outlineSquare=checkSquare || (preferences?.selectedOutline && selected)
+    const model=this.stones.get(outlineSquare)?.mesh.userData.pickMesh
+    if(model){
+      this.outline.geometry=model.geometry
+      this.outline.material.uniforms.tint.value.set(checkSquare?'#ff6f79':indicatorColors[preferences.highlight] || '#90f0aa')
+      model.add(this.outline)
+      this.outline.visible=true
     }
   }
 }

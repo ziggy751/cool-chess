@@ -57,10 +57,15 @@ export function createGames(ratings, id) {
     changed.add(room.code)
     const match=room.match?.snapshot() || null
     if (match?.result) rate(room)
+    const profiles=Object.fromEntries(['w','b'].filter(color=>room.seats[color]).map(color=>{
+      const id=room.players?.[color]
+      const profile=id && ratings.players[id]
+      return [color,profile ? {name:profile.name,rating:ratings.get(id,room.division).rating} : {name:color==='w'?'White player':'Black player'}]
+    }))
     const state = { type: 'state', code: room.code, seq: room.sequence,
       match, minutes: room.minutes, increment:room.increment || 0, matchId:room.matchId, rating:room.rating,
       online: [...room.clients].filter(client => client.color).map(client => client.color),
-      rematch: [...room.rematch], division:room.division || null }
+      rematch: [...room.rematch], division:room.division || null,profiles }
     for (const client of only ? [only] : room.clients) send(client, state)
   }
 
@@ -152,11 +157,14 @@ export function createGames(ratings, id) {
   }
 
   function receive(socket, raw) {
+    let action
     try {
       if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 8192) throw new Error('Invalid message')
-      handle(socket, JSON.parse(raw))
+      const message=JSON.parse(raw)
+      action=message?.type
+      handle(socket,message)
     } catch (error) {
-      send(socket, { type:'error', message:error.message })
+      send(socket, { type:'error', action, message:error.message })
       if (socket.room) broadcast(socket.room, socket)
     }
   }

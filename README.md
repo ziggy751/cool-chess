@@ -4,7 +4,7 @@ A browser chess game with a real-time 3D board, a keyboard-accessible 2D view, a
 
 ![Mountain Cabin in the Chess Evolution 3D showroom](public/world-previews/cabin.webp)
 
-[Play on Cloudflare](https://cool-chess.52560.workers.dev/) · [Immersive world screenshots and verification](docs/immersive-worlds.md)
+[Play on Cloudflare](https://cool-chess.52560.workers.dev/) · [Immersive worlds](docs/immersive-worlds.md) · [Gameplay visibility and multiplayer](docs/gameplay-clarity.md)
 
 ## Run locally
 

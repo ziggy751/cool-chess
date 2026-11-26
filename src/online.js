@@ -34,7 +34,7 @@ export class Online {
     }
     socket.onclose = event => {
       if (this.socket !== socket) return
-      this.onMessage({type:'connection',open:false})
+      this.onMessage({type:'connection',open:false,replaced:event.code===4000})
       if (event.code !== 4000 && (this.room || this.pending.length)) {
         this.reconnect = setTimeout(() => this.connect(), this.retry)
         this.retry = Math.min(this.retry * 2,8000)
@@ -43,11 +43,15 @@ export class Online {
   }
 
   send(message, queue = false) {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify(message))
+      return true
+    }
     else if (queue) {
       this.pending.push(message)
       this.connect()
-    } else this.onMessage({type:'error',message:'Still reconnecting. Please try again.'})
+    } else this.onMessage({type:'error',action:message.type,message:'Still reconnecting. Please try again.'})
+    return false
   }
 
   join(code,spectate = false) {

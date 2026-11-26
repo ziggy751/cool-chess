@@ -5,10 +5,11 @@ import '@fontsource/dm-sans/latin-700.css'
 import '@fontsource/instrument-serif/latin-400.css'
 import './style.css'
 import './overhaul.css'
+import './gameplay.css'
 import { Chess } from 'chess.js'
 import { makeChess, variants, fogVisibility } from './variants.js'
 import { Match, START, TIMES, opposite, validClock } from './rules.js'
-import { Board, glyph, pieces, squareAt, themeList } from './board.js'
+import { Board, glyph, pieces, squareAt, themeList, palettes } from './board.js'
 import { analyzeGame, accuracy, openingFor } from './analysis.js'
 import { opponentAt, bosses } from './opponents.js'
 import { Engine } from './engine.js'
@@ -20,6 +21,7 @@ import { freshLadder, rankOf, rateAI, ratedOpponent } from './ranked-ai.js'
 import { lessons } from './training.js'
 import { playSound, roomSound, updateRoomListener } from './sound.js'
 import { icon } from './icons.js'
+import { annotations, visibilityDefaults, visibilityPresets, indicatorColors, lastMoveColors, moveSpeeds } from './gameplay.js'
 
 const $ = id => document.getElementById(id)
 const el = (tag, className = '', value = '') => Object.assign(document.createElement(tag), {className,textContent:value})
@@ -30,6 +32,7 @@ const read = (key,fallback) => {
 const persist = (key,value) => localStorage.setItem('evolution-' + key,JSON.stringify(value))
 const defaults = {theme:'walnut',environment:'cabin',collection:'staunton',white:'ivory',black:'ebony',camera:'angled',quality:matchMedia('(pointer: coarse)').matches?'medium':'high',
   reduced:matchMedia('(prefers-reduced-motion: reduce)').matches, coords:true, autoQueen:false, volume:35, fov:0, frames:0, avatar:'G', motion:'glide',effect:'gold',overrides:{},cosmetics:true,reflections:true,shadows:true,particles:true,ambient:0,textureQuality:'auto',coach:true,premoves:true,rotate:false,confirm:false,highlight:'green',modelQuality:'high',table:'auto',lighting:'natural',worldDetail:'auto',worldMotion:true,motionSpeed:'normal',motionIntensity:1,captureIntensity:1}
+Object.assign(defaults,visibilityDefaults)
 const settings = {...defaults,...read('settings',{})}
 settings.environment=locationFor(settings.environment).id
 const button = (name, label, id, style = '') => '<button type="button" class="' + style + '" id="' + id + '" aria-label="' + label + '" title="' + label + '">' + icon(name) + '</button>'
@@ -76,8 +79,10 @@ $('app').innerHTML = `
     <div class="game-layout">
       <section class="game" aria-label="Chess game">
         <div id="opponent" class="player"></div>
+        <div class="turn-banner" id="turn-banner" aria-live="polite"><i></i><strong></strong><span></span></div>
         <div id="match-stage"><div class="stage" id="stage" data-theme="walnut">
           <div class="stage-caption"><span></span><strong id="scene-name">Mountain Cabin</strong></div>
+          <div id="fullscreen-turn" class="fullscreen-turn"></div>
 
           <div id="webgl" aria-label="Interactive 3D chessboard"></div>
           <div class="world-loading" aria-live="polite">Loading location…</div>
@@ -107,10 +112,13 @@ $('app').innerHTML = `
         </div></div>
         <div id="player" class="player"></div>
         <div id="pocket" class="pocket" hidden></div><div class="under-board"><span id="match-meta"></span><span id="room-meta"></span></div>
+        <div class="premove-banner" id="premove-banner" hidden><span></span><button type="button" id="cancel-premove">Cancel premove</button></div>
       </section>
       <aside class="match-panel" aria-label="Match panel">
         <div class="match-header"><span class="match-icon">${icon('swords')}</span><div><h2>Match details</h2><p id="match-type">Local game</p></div></div>
         <div class="status" id="status" aria-live="polite"></div>
+        <p class="last-play" id="last-play" hidden></p>
+        <button class="secondary live-return" id="return-live" hidden>Return to live game</button>
         <div class="panel-tabs"><button data-tab="moves" class="current">Moves</button><button data-tab="game">Game info</button></div>
         <div id="panel-content" class="panel-content"></div>
         <div class="replay" aria-label="Replay controls">
@@ -143,6 +151,7 @@ const previewPosition=new Chess()
 let experience = read('xp',0)
 let ladder={...freshLadder(),...read('ai-ladder',{})}
 let lesson, trainingSolved=false, premove=null, pendingSquare=null, lastCheck=''
+let submittedMove=null, awaitingSnapshot=false, previousTurn=null, sessionReplaced=false
 let aiFavourites=new Set(read('ai-favourites',[]))
 let savePoint=read('casual-save',null)
 const rankBlocked=()=> (mode==='ai-ranked' || (mode==='online' && onlineState?.division && onlineColor)) && !state.result && hasMatch
@@ -157,16 +166,37 @@ const stage = $('stage')
 let board
 try {
   board = new Board($('webgl'), selectSquare)
-  board.dragStart = square => canPlay() && viewChess().get(square)?.color === viewChess().turn()
+  board.dragStart = square => (canPlay() || canPremove()) &&
+    viewChess().get(square)?.color === (canPlay()?turn():playerSide())
 } catch (error) {
   console.warn('3D board unavailable',error)
   flat = true
 }
 
 const online = new Online(message => {
-  if (message.type === 'connection') { linked = message.open; drawStatus(); return }
+  if (message.type === 'connection') {
+    linked=message.open
+    sessionReplaced=Boolean(message.replaced)
+    if(!linked)submittedMove=null
+    if(mode==='online'){
+      awaitingSnapshot=true
+      render()
+    }else drawStatus()
+    return
+  }
   if (message.type === 'pong') { ping = Math.round(performance.now()-message.stamp); drawStatus(); return }
-  if (message.type === 'error') { toast(message.message); waiting = false; return }
+  if (message.type === 'error') {
+    if(message.action==='move'){submittedMove=null;render()}
+    if(message.action==='join' && message.message==='Room not found'){
+      online.room=null
+      if(mode==='online' && awaitingSnapshot){onlineState=null;startLocal()}
+      message.message='This room is unavailable. Ask the host for a new invite.'
+    }
+    if($('online-note'))$('online-note').textContent=message.message
+    toast(message.message)
+    waiting=false
+    return
+  }
   if (message.type === 'queued') {
     waiting = true
     if ($('online-note')) $('online-note').textContent = 'Looking for an opponent…'
@@ -174,45 +204,74 @@ const online = new Online(message => {
   }
   if (message.type === 'ladder') { renderLadder(message); return }
   if (message.type === 'joined') {
+    const sameSeat=mode==='online' && roomCode===message.code && onlineColor===message.color
     stopEngine()
     mode = 'online'
     hasMatch=true
-    showScreen('match')
+    awaitingSnapshot=true
+    sessionReplaced=false
+    submittedMove=null
     roomCode = message.code
     const url = new URL(location.href)
     url.searchParams.set('room',roomCode)
     window.history.replaceState(null,'',url)
     onlineColor = message.color
-    pendingSquare=null
-    premove=null
-    flipped = onlineColor === 'b'
-    resetCamera()
-    replay = null
-    selected = null
     waiting = false
-    lastResult = null
-    onlineState = null
-    motionKey = ''
+    if(!sameSeat){
+      pendingSquare=null
+      premove=null
+      flipped=onlineColor==='b'
+      replay=null
+      selected=null
+      lastResult=null
+      onlineState=null
+      motionKey=''
+      lastPly=0
+      previousTurn=null
+      state=emptyRoom()
+      showScreen('match')
+    }
     $('dialog').close()
   }
-  if (message.type === 'expired') { toast('This room expired'); startLocal(); return }
+  if(message.type==='expired'){
+    onlineState=null
+    startLocal()
+    toast('This room expired. Create a new room to play again.')
+    return
+  }
   if (message.type === 'state') {
-    if (onlineState?.match && (onlineState.match.moves.length !== message.match?.moves.length)
-        && (message.match?.moves.length ?? 0) === 0) {
+    if(mode!=='online' || message.code!==roomCode || message.seq<(onlineState?.seq ?? -1))return
+    const prior=onlineState
+    if (prior?.matchId && prior.matchId!==message.matchId) {
       replay = null
       selected = null
       lastResult = null
+      premove=null
+      pendingSquare=null
+      previousTurn=null
     }
-    const divisionChanged=onlineState?.division!==message.division
+    const newMove=prior?.matchId && prior.matchId===message.matchId && message.match?.moves.length===prior.match?.moves.length+1
+    if(newMove && screen==='match'){
+      const last=message.match.moves.at(-1)
+      sound(last.captured?105:167,last.color)
+    }
+    if(submittedMove!==null && (message.seq!==submittedMove || message.match?.result))submittedMove=null
+    if(message.match?.result){premove=null;pendingSquare=null;selected=null}
+    const divisionChanged=prior?.division!==message.division
     onlineState = message
-    if (divisionChanged) applySettings()
-    state = message.match || {initial:START, fen:START, moves:[], minutes:message.minutes,
-      clocks:{w:message.minutes*60000,b:message.minutes*60000}}
+    state=message.match || emptyRoom(message.minutes,message.increment)
+    if(awaitingSnapshot){motionKey=state.fen;lastPly=state.moves.length}
+    awaitingSnapshot=false
     stateAt = performance.now()
+    if (divisionChanged) applySettings()
     render()
     runPremove()
   }
 })
+
+function emptyRoom(minutes=defaultMinutes,increment=0) {
+  return {initial:START,fen:START,variant:'standard',moves:[],minutes,increment,clocks:{w:minutes*60000,b:minutes*60000}}
+}
 
 function awardXP(amount) {
   experience += amount
@@ -237,6 +296,10 @@ function startLocal(kind = 'local',minutes = defaultMinutes,fen,variant='standar
   firstMove = kind!=='ai-ranked'
   trainingSolved=false
   premove=null
+  submittedMove=null
+  awaitingSnapshot=false
+  sessionReplaced=false
+  previousTurn=null
   pendingSquare=null
   lastCheck=''
   puzzleSolved = false
@@ -275,28 +338,53 @@ function viewChess() {
 }
 function turn() { return state.fen.split(' ')[1] }
 function versusAI() { return ['ai','ai-ranked','survival','boss'].includes(mode) }
+function playerSide() { return mode==='online'?onlineColor:versusAI()?'w':null }
 function fogged() { return state.variant==='fog' && !state.result }
 function moveFor(current, move) {
   return current.move({from:move.from,to:move.to,promotion:move.promotion,drop:move.drop})
 }
 function canPlay() {
   return screen==='match' && replay === null && !state.result && !puzzleSolved && !trainingSolved &&
-    (mode === 'online' ? linked && onlineState?.match && turn() === onlineColor
+    (mode === 'online' ? linked && !awaitingSnapshot && submittedMove===null && onlineState?.match && turn() === onlineColor
       : !versusAI() || turn() === 'w')
 }
 
+function canPremove() {
+  const side=playerSide()
+  return Boolean(screen==='match' && side && settings.premoves && state.variant==='standard' &&
+    !state.result && replay===null && turn()!==side &&
+    (mode!=='online' || linked && !awaitingSnapshot && onlineState?.match))
+}
+
+function clearSelection(){
+  selected=null
+  pendingSquare=null
+  premove=null
+  drop=null
+  renderBoard()
+}
+
 function runPremove() {
-  if (!premove || !canPlay()) return
+  if(!canPlay())return
+  if(!premove){
+    if(pendingSquare){
+      selected=viewChess().get(pendingSquare)?.color===turn()?pendingSquare:null
+      pendingSquare=null
+      renderBoard()
+    }
+    return
+  }
   const {from,to}=premove
   premove=null
   selected=null
   const option=makeChess(state.fen,state.variant).moves({square:from,verbose:true}).find(
     move=>move.to===to && (!move.promotion || move.promotion==='q'))
-  if(option) playMove(option)
-  else renderBoard()
+  if(option) playMove(option,true)
+  else {renderBoard();toast('Premove cancelled. That move is no longer legal.')}
 }
 
 function playMove(move,confirmed=false) {
+  if(!canPlay())return
   if (!confirmed && settings.confirm && !rankBlocked()) {
     show('Confirm move','<p id="move-confirmation"></p>'+action('check','Play move','confirm-move','primary full'))
     $('move-confirmation').textContent=(move.from || '')+' → '+move.to
@@ -304,7 +392,11 @@ function playMove(move,confirmed=false) {
     return
   }
   if (mode === 'online') {
-    online.send({type:'move',seq:onlineState.seq,move})
+    if(online.send({type:'move',seq:onlineState.seq,move:{from:move.from,to:move.to,promotion:move.promotion}})){
+      submittedMove=onlineState.seq
+      renderBoard()
+      renderTurn()
+    }
     return
   }
   if (mode==='training') {
@@ -332,19 +424,23 @@ function playMove(move,confirmed=false) {
     flipped = local.chess.turn() === 'b'
     resetCamera()
   }
-  sound(result.captured ? 105 : 167)
+  sound(result.captured ? 105 : 167,result.color)
   refreshLocal()
   if (versusAI()) requestMove()
 }
 
 function selectSquare(square) {
   if (!square || screen!=='match' || state.result) return
-  const side=mode==='online'?onlineColor:versusAI()?'w':null
   if (!canPlay()) {
-    if (!side || !settings.premoves || replay!==null || state.variant!=='standard' || turn()===side) return
+    if(!canPremove())return
     const piece=viewChess().get(square)
-    if (piece?.color===side) pendingSquare=square
-    else if(pendingSquare){premove={from:pendingSquare,to:square};pendingSquare=null;toast('Premove queued · Esc to cancel')}
+    if (piece?.color===playerSide()){
+      pendingSquare=pendingSquare===square?null:square
+      premove=null
+    }else if(pendingSquare){
+      premove={from:pendingSquare,to:square}
+      pendingSquare=null
+    }
     renderBoard()
     return
   }
@@ -384,7 +480,7 @@ function selectSquare(square) {
       toast(chess.isCheck()?'That move does not resolve check.':piece?.type==='p'?'Pawns advance into empty squares and capture diagonally.':piece?.type==='k'?'The king must move to an unattacked square.':'That route is blocked or would leave your king in check.')
     }
     selected = chess.get(square)?.color === chess.turn() && selected !== square ? square : null
-    if (selected) playSound('ui',settings.volume*.44)
+    if (selected) playSound('ui',settings.volume*.32)
   }
   renderBoard()
 }
@@ -398,8 +494,8 @@ async function requestMove() {
     const move = await search.move(fen,level,thinkTime,opponentAt(level).style)
     if (!move || engine !== search || !versusAI() || state.fen !== fen) return
     if (firstMove) { local.began=local.started=Date.now(); firstMove=false }
-    local.move({from:move.slice(0,2),to:move.slice(2,4),promotion:move[4]},'b')
-    sound(154)
+    const played=local.move({from:move.slice(0,2),to:move.slice(2,4),promotion:move[4]},'b')
+    sound(played.captured?105:167,played.color)
     refreshLocal()
     runPremove()
   } catch (error) {
@@ -407,11 +503,11 @@ async function requestMove() {
   }
 }
 
-function sound(frequency) {
-  const material=settings[turn()==='b'?'white':'black'] || ''
+function sound(frequency,color) {
+  const material=settings[color==='w'?'white':'black'] || ''
   const kind=/glass|crystal|frost|phantom|sapphire|emerald/.test(material)?'glass':
     /gold|chrome|brass|titanium|carbon/.test(material)?'metal':/marble|stone|obsidian|ceramic/.test(material)?'stone':'wood'
-  playSound(kind,settings.volume,frequency===105)
+  if(frequency!==105 || settings.captureSound)playSound(kind,settings.volume,frequency===105)
   roomSound(locationFor(settings.environment).id,settings.ambient)
 }
 
@@ -443,8 +539,19 @@ function openStudio() {
   showScreen('studio')
 }
 function applySettings() {
-  stage.dataset.theme = settings.theme
-  stage.dataset.highlight = settings.highlight
+  const theme=(screen==='match' && mode==='boss' && bossTheme?.theme) || settings.theme
+  const [light,dark,frame]=palettes[theme] || palettes.walnut
+  stage.dataset.theme=theme
+  stage.style.setProperty('--light-square',light)
+  stage.style.setProperty('--dark-square',dark)
+  stage.style.setProperty('--stage',frame)
+  stage.classList.toggle('high-contrast',Boolean(settings.highContrast))
+  stage.classList.toggle('subdued-indicators',!settings.overlayIndicators)
+  stage.style.setProperty('--legal-color',indicatorColors[settings.highlight] || indicatorColors.green)
+  stage.style.setProperty('--last-color',lastMoveColors[settings.lastMoveColor] || lastMoveColors.gold)
+  stage.style.setProperty('--mark-opacity',settings.indicatorOpacity)
+  stage.style.setProperty('--dot-size',settings.indicatorSize*25+'%')
+  stage.classList.toggle('no-selection-outline',!settings.selectedOutline)
   const useFlat = !board || (screen==='match' && flat)
   stage.classList.toggle('is-flat',useFlat)
   stage.classList.toggle('no-coords',!settings.coords)
@@ -475,14 +582,13 @@ function applySettings() {
     board.environmentMotion=cosmetic && settings.worldMotion
     board.roomListener=updateRoomListener
     board.lightingStyle=settings.lighting
-    board.highlight=settings.highlight
     board.reduced = settings.reduced
     board.engraving.visible = settings.coords && screen!=='home'
     board.setViewOptions(+settings.fov,+settings.frames)
     board.setQuality(settings.quality)
     const detail=settings.worldDetail==='auto'?(settings.quality==='low'?'low':'high'):settings.worldDetail
     if(!useFlat)board.setWorld(world.id,settings.table,detail,settings.lighting)
-    board.setTheme((screen==='match' && mode==='boss' && bossTheme?.theme) || settings.theme,settings.white,settings.black,environment,settings.collection,settings.overrides)
+    board.setTheme(theme,settings.white,settings.black,environment,settings.collection,settings.overrides)
   }
   renderBoard()
 }
@@ -493,29 +599,41 @@ function renderBoard() {
     return
   }
   if (screen!=='match' && !board) {
-    drawFlat(previewPosition,previewPosition,[],null,null)
+    drawFlat(previewPosition,{marks:[]},null)
     return
   }
   const chess = viewChess()
   const moves = replay === null ? state.moves : state.moves.slice(0,replay)
   const visibility = fogged() ? fogVisibility(chess) : null
   const last = visibility ? null : moves.at(-1)
-  const legal = (selected || drop) && canPlay() ? chess.moves({square:selected,drop,verbose:true}).filter(move=>move.captured!=='k').flatMap(move=>move.landing ? [move.to,move.landing] : [move.to]) : []
+  const targets=new Map()
+  if((selected || drop) && canPlay()){
+    const legal=chess.moves({square:selected,drop,verbose:true})
+    for(const move of legal){
+      if(move.captured==='k')continue
+      targets.set(move.to,move.captured?'capture':'move')
+      if(move.landing)targets.set(move.landing,'move')
+    }
+  }
   const masked = visibility ? {
     board:()=>chess.board().map(row=>row.map(piece=>piece && visibility.has(piece.square) ? piece : null)),
     get:square=>visibility.has(square) ? chess.get(square) : null,
     turn:()=>chess.turn(),isCheck:()=>chess.isCheck(),fen:()=>chess.fen(),
   } : chess
   const key = chess.fen()
-  board?.render(masked,selected || pendingSquare || premove?.from,legal,last,key !== motionKey && moves.length === lastPly+1,visibility)
+  const selection=selected || pendingSquare
+  const guidance=annotations({chess:masked,selection,queued:premove,targets,last,settings})
+  if(!flat)board?.render(masked,selection,[],last,replay===null && key!==motionKey && moves.length===lastPly+1,visibility,guidance,settings)
+  $('premove-banner').hidden=!premove
+  $('premove-banner').querySelector('span').textContent=premove?'Premove · '+premove.from+' → '+premove.to:''
   motionKey = key
   lastPly = moves.length
   renderPockets(chess)
   if (!flat) return
-  drawFlat(chess,masked,legal,last,visibility)
+  drawFlat(masked,guidance,visibility)
 }
 
-function drawFlat(chess,masked,legal,last,visibility) {
+function drawFlat(masked,guidance,visibility) {
   const grid = $('grid')
   const focused = grid.contains(document.activeElement) ? document.activeElement.dataset.square : null
   grid.replaceChildren()
@@ -526,21 +644,21 @@ function drawFlat(chess,masked,legal,last,visibility) {
     tile.dataset.square = square
     tile.setAttribute('aria-label',square + (piece ? ' ' + (piece.color === 'w' ? 'white ' : 'black ') + pieces[piece.type] : ''))
     tile.classList.toggle('fogged',Boolean(visibility && !visibility.has(square)))
-    tile.classList.toggle('selected',square === (selected || pendingSquare || premove?.from))
-    tile.classList.toggle('premove',square===premove?.to)
-    tile.classList.toggle('last-move',Boolean(last && [last.from,last.landing || last.to].includes(square)))
-    tile.classList.toggle('legal',legal.includes(square))
-    tile.classList.toggle('occupied',Boolean(piece))
-    tile.classList.toggle('check',piece?.type === 'k' && piece.color === chess.turn() && chess.isCheck())
+    const kinds=guidance.marks.filter(([target])=>target===square).map(([,kind])=>kind)
+    tile.dataset.marks=kinds.join(' ')
+    tile.setAttribute('aria-pressed',String(kinds.includes('selected')))
+    const details=kinds.map(kind=>({move:'Legal move',capture:'Legal capture',check:'In check',origin:'Last move origin',
+      destination:'Last move destination',captured:'Capture destination',queued:'Queued premove',selected:'Selected'}[kind])).filter(Boolean)
+    if(details.length)tile.setAttribute('aria-description',details.join('. '))
     tile.tabIndex = square === (focused || (flipped ? 'h1' : 'a8')) ? 0 : -1
     if (piece) tile.append(el('span','piece-icon '+piece.color,glyph[piece.type]))
+    for(const kind of kinds)tile.append(el('span','flat-indicator mark-'+kind))
     if (settings.coords && col === 0) tile.append(el('span','coord rank',square[1]))
     if (settings.coords && row === 7) tile.append(el('span','coord file',square[0]))
     tile.onclick = () => selectSquare(square)
     tile.onkeydown = event => {
       if (event.key==='Escape') {
-        premove=null;pendingSquare=null;selected=null;drop=null
-        renderBoard()
+        clearSelection()
         return
       }
       const delta = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-8,ArrowDown:8}[event.key]
@@ -554,6 +672,17 @@ function drawFlat(chess,masked,legal,last,visibility) {
     grid.append(tile)
   }
   if (focused) grid.querySelector('[data-square="'+focused+'"]')?.focus()
+  if(guidance.arrow){
+    const coords=square=>[square.charCodeAt(0)-96.5,8.5-Number(square[1])].map(n=>flipped?8-n:n)
+    const [[x1,y1],[x2,y2]]=guidance.arrow.map(coords)
+    const angle=Math.atan2(y2-y1,x2-x1)
+    const tail=Math.hypot(x2-x1,y2-y1)-.30
+    if(tail>0){
+      const arrow=el('span','flat-arrow')
+      Object.assign(arrow.style,{left:x1*12.5+'%',top:y1*12.5+'%',width:tail*12.5+'%',transform:'rotate('+angle+'rad)'})
+      grid.append(arrow)
+    }
+  }
 }
 function renderPockets(chess) {
   const region = $('pocket')
@@ -589,26 +718,48 @@ function players() {
   const weights = {p:1,n:3,b:3,r:5,q:9}
   for (const [id,color] of [['opponent',flipped ? 'w' : 'b'],['player',flipped ? 'b' : 'w']]) {
     const side = color === 'w' ? 'White' : 'Black'
-    const name = versusAI() && color === 'b' ? opponentAt(level).name : mode === 'online' && color === onlineColor ? 'You' : side
-    const sub = bot && color === 'b' ? bot.rating+' Elo target' : mode==='ai-ranked' && color==='w' ? ladder.rating+' AI Elo' : mode === 'online' && !onlineState?.online.includes(color) ? 'Away' : side + ' pieces'
+    const person=mode==='online'?onlineState?.profiles?.[color]:null
+    const own=color===playerSide()
+    const isBot=bot && color==='b'
+    const name=own?'You':isBot?bot.name:person?.name || side
+    const rating=isBot?bot.rating+' Elo target':mode==='ai-ranked' && color==='w'?ladder.rating+' AI Elo':
+      person?.rating!==undefined?person.rating+' Elo':''
+    const onlineLabel=mode!=='online'?'':onlineState?.online.includes(color)?'Connected':
+      onlineState?.match?'Disconnected':'Waiting to join'
+    const active=!state.result && !trainingSolved && !puzzleSolved && (mode!=='online' || Boolean(onlineState?.match)) && turn()===color
     const value = list => list.reduce((sum,type)=>sum+weights[type],0)
     const advantage = value(captures[color])-value(captures[opposite(color)])
-    $(id).innerHTML = `<div class="avatar ${color}">${color==='b' && bot ? bot.avatar : color==='w'?'♘':'♞'}</div><div class="player-info"><strong>${name}</strong><span>${sub}</span></div>
-      <span class="captures" aria-label="Captured pieces">${captures[color].map(p=>glyph[p]).join('')}${advantage>0 ? ' +'+advantage : ''}</span>
+    const panel=$(id)
+    panel.dataset.color=color
+    panel.classList.toggle('active-player',active)
+    panel.innerHTML=`<div class="avatar ${color}"></div><div class="player-info"><strong></strong><span></span></div>
+      <span class="player-turn" ${active?'':'hidden'}>To move</span><div class="captures" aria-label="Captured pieces"></div>
       <div class="clock" id="clock-${color}">${icon('clock')}<span></span></div>`
+    panel.querySelector('.avatar').textContent=isBot?bot.avatar:own?settings.avatar:color==='w'?'♘':'♞'
+    panel.querySelector('.player-info strong').textContent=name
+    panel.querySelector('.player-info>span').textContent=[side,rating,onlineLabel].filter(Boolean).join(' · ')
+    const captureList=panel.querySelector('.captures')
+    const counts=new Map()
+    for(const piece of captures[color])counts.set(piece,(counts.get(piece) || 0)+1)
+    for(const [piece,count] of counts){
+      const cell=el('span','',glyph[piece]+(count>1?'×'+count:''))
+      cell.title=count+' '+pieces[piece]+(count>1?'s':'')+' captured'
+      captureList.append(cell)
+    }
+    if(advantage>0)captureList.append(el('b','material-advantage','+'+advantage))
   }
   clocks()
 }
 
 function clocks() {
   const remaining = mode === 'online' ? {...state.clocks} : local.remaining(firstMove ? local.started : Date.now())
-  const active = !state.result && (mode !== 'online' || onlineState?.match)
+  const active = !state.result && !trainingSolved && !puzzleSolved && (mode !== 'online' || onlineState?.match)
   if (active && mode === 'online') remaining[turn()] = Math.max(0,remaining[turn()] - (performance.now()-stateAt) - ping/2)
   for (const color of ['w','b']) {
     const clock = $('clock-'+color)
     if (!clock) continue
     clock.classList.toggle('running',Boolean(active && turn() === color))
-    clock.classList.toggle('low-time',Boolean(state.minutes && remaining[color] < 20000))
+    clock.classList.toggle('low-time',Boolean(!state.result && state.minutes && remaining[color] < 20000))
     clock.querySelector('span').textContent = clockText(remaining[color])
   }
 }
@@ -618,7 +769,53 @@ function drawStatus() {
   const connection = $('connection')
   connection.classList.toggle('offline',mode === 'online' && !linked)
   connection.querySelector('span').textContent = mode === 'online' ?
-    (linked ? 'Connected' + (ping ? ' · '+ping+' ms' : '') : 'Reconnecting') : 'Local session'
+    (sessionReplaced?'Opened in another tab':linked && !awaitingSnapshot ? 'Connected' + (ping ? ' · '+ping+' ms' : '') : 'Reconnecting') : 'Local session'
+}
+
+function renderTurn(){
+  const side=playerSide()
+  const color=turn()
+  const colorName=color==='w'?'White':'Black'
+  const status=$('turn-banner')
+  const detail=status.querySelector('span')
+  let label=colorName+' to move', note='', kind='waiting'
+  if(state.result){
+    const reason=state.result.reason
+    label=reason==='Checkmate'?'Checkmate':reason==='Stalemate'?'Stalemate · Draw':state.result.winner?'Match ended':'Draw'
+    note=state.result.winner?(state.result.winner==='w'?'White':'Black')+' wins · '+reason:reason==='Stalemate'?'':reason
+    kind='over'
+  }else if(trainingSolved || puzzleSolved){label=puzzleSolved?'Puzzle solved':'Exercise complete';kind='over'}
+  else if(replay!==null){label='Reviewing position';note='Move '+replay+' of '+state.moves.length}
+  else if(mode==='online' && sessionReplaced){label='Opened in another tab';note='Continue in that tab'}
+  else if(mode==='online' && (!linked || awaitingSnapshot)){label='Reconnecting';note='Restoring match state'}
+  else if(mode==='online' && !onlineState?.match){label='Waiting for opponent';note='Share your invite link'}
+  else if(submittedMove!==null && mode==='online'){label='Sending move';note='Waiting for confirmation'}
+  else if(versusAI() && color==='b'){
+    const opponent=opponentAt(level)
+    label='AI thinking';note=opponent.name+' · '+opponent.rating+' Elo target';kind='thinking'
+  }else if(side){
+    const opponentAway=mode==='online' && !onlineState?.online.includes(opposite(side))
+    label=side===color?'Your turn':"Opponent’s turn"
+    note=opponentAway?'Opponent disconnected':side===color?'You play '+(side==='w'?'White':'Black'):'Waiting for opponent'
+    kind=side===color?'active':'waiting'
+  }else kind='active'
+  const check=!state.result && (mode!=='online' || onlineState?.match) && viewChess().isCheck()
+  if(check && (!awaitingSnapshot || replay!==null))note=side===color?'Your king is in check':side?'Opponent in check':colorName+' king in check'
+  const headline=status.querySelector('strong')
+  if(headline.textContent!==label)headline.textContent=label
+  if(detail.textContent!==note)detail.textContent=note
+  status.dataset.kind=kind
+  $('fullscreen-turn').textContent=[label,note].filter(Boolean).join(' · ')
+  status.classList.toggle('in-check',Boolean(check))
+  stage.dataset.activeSide=kind==='over' || replay!==null || (mode==='online' && !onlineState?.match)?'':(color===(flipped?'b':'w')?'near':'far')
+  $('return-live').hidden=replay===null
+  const activeNow=kind==='active' && side===color
+  if(activeNow && previousTurn && previousTurn!==color && screen==='match'){
+    if(settings.turnSound)playSound('ui',settings.volume*.7)
+    if(settings.turnNotices && !premove && !stage.contains(document.activeElement) && $('toast').hidden)
+      toast(check?'Your turn · Your king is in check':'Your turn')
+  }
+  if(screen==='match' && replay===null && !state.result && (mode!=='online' || onlineState?.match))previousTurn=color
 }
 function render() {
   drawStatus()
@@ -642,6 +839,17 @@ function render() {
   const check=!state.result && makeChess(state.fen,state.variant).isCheck()
   const notice=state.drawOffer ? 'Draw offered' : mode==='online' && onlineState?.match && onlineColor && !onlineState.online.includes(opposite(onlineColor)) ? 'Opponent disconnected' : ''
   $('status').querySelector('span').textContent = state.result?.reason || (check ? 'CHECK' : notice)
+  renderTurn()
+  const move=state.moves.at(-1)
+  const update=$('last-play')
+  update.hidden=!settings.turnNotices || !move || fogged()
+  if(!update.hidden) {
+    const color=move.color==='w'?'White':'Black'
+    const castle=/^O-O/.test(move.san)
+    update.textContent=castle?color+' castled.':color+(move.captured?
+      ' captured '+pieces[move.captured].toLowerCase()+' with '+pieces[move.piece].toLowerCase()+' on ':
+      ' moved '+pieces[move.piece].toLowerCase()+' to ')+(move.landing || move.to)+(move.promotion?' and promoted to '+pieces[move.promotion].toLowerCase():'')+'.'
+  }
   if (check && lastCheck!==state.fen) {
     playSound('glass',settings.volume*.68,true)
     lastCheck=state.fen
@@ -695,6 +903,7 @@ function exportPgn() {
 
 function renderPanel() {
   const content = $('panel-content')
+  const scroll=content.scrollTop
   content.replaceChildren()
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('current',item.dataset.tab === tab))
   const ply = replay ?? state.moves.length
@@ -772,12 +981,17 @@ function renderPanel() {
       if (move.color === 'b') row.append(el('span','','—'))
     }
     const item = el('button',ply === index+1 ? 'chosen' : '',move.san)
+    if(move.captured)item.dataset.tactical='capture'
+    if(/[+#]/.test(move.san))item.dataset.tactical=move.san.includes('#')?'mate':'check'
+    if(ply===index+1)item.setAttribute('aria-current','step')
+    if(move.captured)item.title='Captured '+pieces[move.captured].toLowerCase()
     item.onclick = () => seek(index+1)
     row.append(item)
     if (move.color === 'b') number++
   }
   content.append(table)
   if (replay === null) content.scrollTop = content.scrollHeight
+  else content.scrollTop=scroll
 }
 
 function seek(ply) {
@@ -785,8 +999,12 @@ function seek(ply) {
   drop = null
   replay = ply >= state.moves.length ? null : Math.max(ply,0)
   selected = null
+  pendingSquare=null
+  premove=null
+  motionKey=viewChess().fen()
   renderBoard()
   renderPanel()
+  renderTurn()
 }
 
 function download(text) {
@@ -994,7 +1212,7 @@ function showResult(change) {
       <button class="secondary" id="result-home">Return to menu</button>
       <button class="secondary" id="result-pgn">Download PGN</button>
     </div></div>`)
-  $('result-reason').textContent=final.reason
+  $('result-reason').textContent=final.reason==='Checkmate'?'Checkmate · '+(final.winner==='w'?'White':'Black')+' wins':final.reason==='Stalemate'?'Stalemate · Draw':final.reason
   $('result-opponent').textContent=opponent
   playSound('ui',settings.volume*.78,true)
   $('result-repeat').onclick=()=>{$('dialog').close();$('resign').click()}
@@ -1174,20 +1392,50 @@ function challenges() {
 }
 
 function settingsDialog() {
+  const checkbox=(id,label)=>`<label class="toggle"><input type="checkbox" data-setting="${id}" ${settings[id]?'checked':''}> ${label}</label>`
+  const choice=(id,label,items)=>`<label>${label}<select data-setting="${id}">${options(Object.entries(items),settings[id])}</select></label>`
   show('Settings', `
-    <div class="list"><div class="two-fields"><label>Camera<select data-setting="camera">${options(Object.entries(cameras),settings.camera)}</select></label>
+    <details class="visibility-settings" open><summary>Gameplay visibility</summary><div class="list">
+    <div class="visibility-presets" aria-label="Visibility presets">${Object.keys(visibilityPresets).map(key=>
+      `<button type="button" class="secondary" data-visibility-preset="${key}">${key[0].toUpperCase()+key.slice(1)}</button>`).join('')}</div>
+    <div class="two-fields">
+    ${choice('highlight','Legal move colour',{green:'Green',blue:'Blue',gold:'Gold',violet:'Violet'})}
+    ${choice('lastMoveColor','Last move colour',Object.fromEntries(Object.keys(lastMoveColors).map(id=>[id,id[0].toUpperCase()+id.slice(1)])))}
+    <label>Indicator size<input type="range" min=".65" max="1.5" step=".01" data-setting="indicatorSize" value="${settings.indicatorSize}"></label>
+    <label>Indicator opacity<input type="range" min=".35" max="1" step=".01" data-setting="indicatorOpacity" value="${settings.indicatorOpacity}"></label>
+    ${choice('motionSpeed','Move animation speed',moveSpeeds)}
+    </div>
+    <div class="settings-toggles">${[
+      ['showLegal','Legal move indicators'],['overlayIndicators','Emphasize indicators over effects'],
+      ['selectedOutline','Selected-piece outline'],['showLastMove','Last-move highlighting'],['lastMoveArrow','Last-move arrow'],
+      ['showCaptures','Capture indicators'],['showCheck','Check highlighting'],['highContrast','High contrast'],
+      ['turnNotices','Turn and move notifications'],['turnSound','Your turn sound'],['captureSound','Capture sound'],
+      ['coords','Board coordinates'],['reduced','Reduced motion'],['premoves','Premoves'],['coach','Move explanations'],
+    ].map(([id,label])=>checkbox(id,label)).join('')}</div></div></details>
+    <details class="visibility-settings"><summary>Camera, graphics and audio</summary><div class="list"><div class="two-fields"><label>Camera<select data-setting="camera">${options(Object.entries(cameras),settings.camera)}</select></label>
     <label>Graphics<select data-setting="quality">${options([['low','Performance'],['medium','Balanced'],['high','High'],['ultra','Ultra'],['photo','Cinematic'],['custom','Custom']],settings.quality)}</select></label></div>
     <label>Model quality<select data-setting="modelQuality">${options([['high','High'],['low','Performance']],settings.modelQuality)}</select></label>
     <label>Environment detail<select data-setting="worldDetail">${options([['auto','Match graphics preset'],['low','Performance'],['high','Detailed']],settings.worldDetail)}</select></label>
     <label class="toggle"><input type="checkbox" data-setting="worldMotion" ${settings.worldMotion?'checked':''}> Environment animation</label>
     <label>Walnut textures<select data-setting="textureQuality">${options([['auto','Match preset'],['low','Standard'],['2k','2K'],['4k','4K']],settings.textureQuality)}</select></label>
-    <div class="settings-toggles">${[['coords','Board coordinates'],['autoQueen','Auto queen'],['reduced','Reduced motion'],['cosmetics','Animated materials'],['reflections','Reflections'],['shadows','Shadows'],['particles','Particles'],['coach','Move explanations'],['premoves','Premoves'],['rotate','Auto-rotate local board'],['confirm','Confirm casual moves']].map(([id,label])=>`<label class="toggle"><input type="checkbox" data-setting="${id}" ${settings[id]?'checked':''}> ${label}</label>`).join('')}</div>
+    <div class="settings-toggles">${[['autoQueen','Auto queen'],['cosmetics','Animated materials'],['reflections','Reflections'],['shadows','Shadows'],['particles','Particles'],['rotate','Auto-rotate local board'],['confirm','Confirm casual moves']].map(([id,label])=>checkbox(id,label)).join('')}</div>
     <div class="two-fields"><label>Field of view<input data-setting="fov" type="range" min="-6" max="18" value="${settings.fov}"></label>
     <label>Frame rate limit<select data-setting="frames">${options([[0,'Display refresh'],[30,'30 FPS'],[60,'60 FPS'],[120,'120 FPS']],settings.frames)}</select></label></div>
-    <label>Move highlights<select data-setting="highlight">${options([['green','Sage'],['blue','Blue'],['gold','Gold']],settings.highlight)}</select></label>
     <label>Move sound volume<input data-setting="volume" type="range" min="0" max="100" value="${settings.volume}"></label>
-    <label>Room ambience<input data-setting="ambient" type="range" min="0" max="100" value="${settings.ambient}"></label></div>`)
+    <label>Room ambience<input data-setting="ambient" type="range" min="0" max="100" value="${settings.ambient}"></label></div></details>`)
   bindSettings()
+  for(const button of $('dialog-content').querySelectorAll('[data-visibility-preset]')){
+    button.onclick=()=>{
+      Object.assign(settings,visibilityPresets[button.dataset.visibilityPreset])
+      persist('settings',settings)
+      applySettings()
+      if(screen==='match')render()
+      for(const field of $('dialog-content').querySelectorAll('[data-setting]')){
+        if(field.type==='checkbox')field.checked=Boolean(settings[field.dataset.setting])
+        else field.value=settings[field.dataset.setting]
+      }
+    }
+  }
 }
 
 function bindSettings() {
@@ -1197,7 +1445,9 @@ function bindSettings() {
       settings[id]=field.type==='checkbox'?field.checked:field.type==='range'?Number(field.value):field.value
       persist('settings',settings)
       if (id==='camera') { flat=!board || settings.camera==='flat';resetCamera() }
+      if(id==='premoves' && !settings.premoves){premove=null;pendingSquare=null}
       applySettings()
+      if(screen==='match')render()
       if (id==='ambient') {
         playSound('ui',Math.max(1,settings.volume)*.4)
         setTimeout(()=>roomSound(locationFor(settings.environment).id,settings.ambient),150)
@@ -1454,6 +1704,8 @@ $('first').onclick = () => seek(0)
 $('prev').onclick = () => seek((replay ?? state.moves.length)-1)
 $('next').onclick = () => seek((replay ?? state.moves.length)+1)
 $('last').onclick = () => seek(state.moves.length)
+$('return-live').onclick=$('last').onclick
+$('cancel-premove').onclick=clearSelection
 $('draw').onclick = () => {
   if (mode === 'online') return online.send({type:'draw'})
   show('Draw by agreement','<p>Both players must agree to end the game as a draw.</p>'+action('handshake','Agree to draw','confirm-draw','primary full'))
@@ -1497,7 +1749,7 @@ document.addEventListener('keydown',event => {
   }
   if(event.key==='Escape' && stage.classList.contains('photo-mode')){closePhotography();return}
   if(screen!=='match') return
-  if(event.key==='Escape'){premove=null;pendingSquare=null;selected=null;drop=null;renderBoard();return}
+  if(event.key==='Escape'){clearSelection();return}
   const target = {v:'view-mode',f:'flip',r:'reset-camera',ArrowLeft:'prev',ArrowRight:'next'}[event.key]
   if (target) { event.preventDefault(); $(target).click() }
 })
