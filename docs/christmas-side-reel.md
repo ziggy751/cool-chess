@@ -13,13 +13,15 @@ In **Collection**, use the Christmas filter in **Environments**, **Piece sets** 
 
 ## Side Reel
 
-Open the phone below the match board or press **P**. On wide screens it sits in its own column and can move to either side. On narrow screens it sits below the board. Use the arrow buttons, swipe or scroll to browse the finite library. Play each clip manually. Closing, minimizing or hiding the tab pauses playback.
+Open the phone below the match board or press **P**. On wide screens it sits in its own column and can move to either side. On narrow screens it sits below the board. Choose the **Side Reel** app to open the native video library. Use the arrow buttons, swipe or scroll to browse the library. Play each clip manually. Closing, minimizing or hiding the tab pauses playback.
 
-**Phone settings** contains screen side, size, case, volume, turn auto-pause and the keyboard shortcut. Save built-in clips with the bookmark button. Local MP4 or WebM files play through browser object URLs and stay in the current browser session. Local files and the chess instructional clip are available in local and casual AI play. Competitive matches use the curated non-chess clips. The phone handles media separately from chess rules, clocks, input and networking.
+The phone’s **Settings** app contains screen side, size, case, volume, turn auto-pause and the keyboard shortcut. Save built-in clips with the bookmark button. Local MP4 or WebM files play through browser object URLs and stay in the current browser session. Local files and the chess instructional clip are available in local and casual AI play. Competitive matches use the curated non-chess clips. The phone handles media separately from chess rules, clocks, input and networking.
 
 The bundled *Winter window*, *Polar sky*, *Turned light* and *Smothered mate* videos and the bell music were made for this update. They are original animation studies, with the smothered-mate clip using a legal chess position. Video decoding uses the browser’s native player. The room uses original scene geometry and the previously credited cabin assets. [Existing cabin asset credits](immersive-worlds.md#assets)
 
-## Browser captures
+See the [phone and arcade guide](phone-arcade.md) for the current home screen and other apps.
+
+## Christmas release captures
 
 [Christmas menu](screenshots/christmas/menu.webp) · [Phone beside a 3D match](screenshots/christmas/phone.webp) · [Phone on mobile](screenshots/christmas/phone-mobile.webp)
 

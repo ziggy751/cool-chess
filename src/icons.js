@@ -54,4 +54,15 @@ import bookmark from 'lucide-static/icons/bookmark.svg?raw'
 import pause from 'lucide-static/icons/pause.svg?raw'
 import minus from 'lucide-static/icons/minus.svg?raw'
 Object.assign(icons,{smartphone,'battery-full':batteryFull,bookmark,pause,minus})
+import youtube from 'lucide-static/icons/video.svg?raw'
+import feather from 'lucide-static/icons/feather.svg?raw'
+import route from 'lucide-static/icons/route.svg?raw'
+import hash from 'lucide-static/icons/hash.svg?raw'
+import triangle from 'lucide-static/icons/triangle.svg?raw'
+import carFront from 'lucide-static/icons/car-front.svg?raw'
+import blocks from 'lucide-static/icons/blocks.svg?raw'
+import music from 'lucide-static/icons/music.svg?raw'
+import clapperboard from 'lucide-static/icons/clapperboard.svg?raw'
+import lockKeyhole from 'lucide-static/icons/lock-keyhole.svg?raw'
+Object.assign(icons,{'youtube':youtube,'feather':feather,'route':route,'hash':hash,'triangle':triangle,'car-front':carFront,'blocks':blocks,'music':music,'clapperboard':clapperboard,'lock-keyhole':lockKeyhole})
 export const icon = name => icons[name] || ""

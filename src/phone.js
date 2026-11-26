@@ -1,251 +1,309 @@
 import {icon} from './icons.js'
+import {handsetDefaults,wallpapers,frames} from './handset/appearance.js'
+import {node,read,store,optionRows} from './handset/shared.js'
 
-const shows=[
-  {id:'cabin',category:'Christmas',title:'Winter window',caption:'Snowfall, candlelight and a quiet cabin after dark.'},
-  {id:'aurora',category:'Nature',title:'Polar sky',caption:'An animated study of drifting aurora over a pine ridge.'},
-  {id:'brass',category:'Design',title:'Turned light',caption:'Warm reflections move across a stack of hand-shaped brass rings.'},
-  {id:'smothered',category:'Chess',title:'Smothered mate',caption:'A queen sacrifice leads to a forced knight mate.'},
-].map(item=>({...item,source:'/side-reel/'+item.id+'.mp4',poster:'/side-reel/'+item.id+'.webp',creator:'Chess Evolution Studio'}))
-
-const el=(tag,className,text)=>Object.assign(document.createElement(tag),{className,textContent:text})
-const iconButton=(id,label,symbol)=>`<button id="${id}" type="button" aria-label="${label}" title="${label}">${icon(symbol)}</button>`
-const storageKey='evolution-phone-bookmarks'
+const apps={
+  youtube:['YouTube Shorts','youtube','coral',()=>import('./handset/youtube.js')],
+  comedy:['AI Shorts','sparkles','violet',()=>import('./handset/comedy.js')],
+  wings:['Flappy Wings','feather','aqua',()=>import('./handset/arcade.js')],
+  snake:['Snake','route','fern',()=>import('./handset/arcade.js')],
+  numbers:['2048','hash','amber',()=>import('./handset/puzzles.js')],
+  runner:['Geometry Runner','triangle','orchid',()=>import('./handset/arcade.js')],
+  tower:['Stack Tower','layers','blue',()=>import('./handset/arcade.js')],
+  racing:['Mini Racing','car-front','coral',()=>import('./handset/arcade.js')],
+  blocks:['Block Puzzle','blocks','honey',()=>import('./handset/puzzles.js')],
+  chess:['Chess Puzzles','chess-knight','teal',()=>import('./handset/chess.js')],
+  music:['Music','music','orchid',()=>import('./handset/music.js')],
+  settings:['Settings','settings','slate',null],
+  clips:['Side Reel','clapperboard','teal',()=>import('./handset/clips.js')],
+}
+const iconButton=(id,label,symbol)=>'<button id="'+id+'" type="button" aria-label="'+label+'" title="'+label+'">'+icon(symbol)+'</button>'
+const settingsFields=[
+  ['phoneFrame','Frame finish',frames],['phoneCase','Case',{standard:'None',christmas:'Christmas red',gold:'Champagne'}],
+  ['phoneWallpaper','Wallpaper',wallpapers],['phoneMode','Display mode',{dark:'Dark',light:'Light'}],
+  ['phoneIcons','App icons',{colour:'Colour',mono:'Monochrome'}],['phoneBrightness','Brightness',[.48,1,.02]],
+  ['phoneSize','Size',{compact:'Compact',regular:'Regular',large:'Large'}],['phoneSide','Screen side',{right:'Right',left:'Left'}],
+  ['phoneMotion','Animation speed',{quick:'Quick',normal:'Normal',relaxed:'Relaxed'}],
+  ['phoneVolume','Media volume',[0,1,.05]],['phoneMuted','Mute native video',true],['phoneLock','Lock when reopened',true],
+  ['phoneAutopause','Pause video on your turn',true],['phoneGamePause','Pause games on your turn',true],
+  ['phoneMusicContinue','Music continues on Home',true],['phoneNotices','Turn chime',true],
+  ['phoneReduced','Reduce motion',true],['phoneShortcut','P shortcut',true],
+]
+const clock=new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',hour12:false})
+const date=new Intl.DateTimeFormat(undefined,{weekday:'long',month:'short',day:'numeric'})
+const limited=new Set(['chess','youtube'])
+const gameApps=new Set(['wings','snake','numbers','runner','tower','racing','blocks','chess'])
 
 export function createPhone(host,settings,save){
+  for(const [key,value] of Object.entries(handsetDefaults))settings[key]??=value
+  const layout=host.closest('.game-layout')
+  const launcher=document.getElementById('phone-toggle')
   host.innerHTML=`
     <div class="phone-housing"><div class="phone-screen">
-      <div class="phone-status"><time></time><span aria-hidden="true">▮▮▮ ${icon('battery-full')}</span></div>
-      <header class="phone-header">
-        <strong>Side Reel</strong><div class="phone-window-actions">
-          ${iconButton('phone-minimize','Minimize phone','minus')}${iconButton('phone-close','Close phone','x')}
-        </div>
-      </header>
-      <div class="phone-viewport" tabindex="0" aria-label="Video player">
-        <video playsinline preload="none" aria-label="Short video"></video>
-        <button class="phone-main-play" type="button" aria-label="Play video">${icon('play')}</button>
-        <div class="phone-video-copy"><strong></strong><small></small><p></p></div>
-        <p class="phone-media-error" role="status" hidden></p>
-      </div>
-      <div class="phone-progress"><progress max="1" value="0" aria-label="Video progress"></progress><span>0:00</span></div>
-      <div class="phone-video-controls">
-        ${iconButton('phone-prev','Previous video','chevron-left')}
-        ${iconButton('phone-play','Play or pause video','play')}
-        ${iconButton('phone-next','Next video','chevron-right')}
-        ${iconButton('phone-save','Bookmark video','bookmark')}
-        ${iconButton('phone-mute','Mute phone','volume-2')}
-        ${iconButton('phone-full','Fullscreen video','maximize')}
-      </div>
-      <label class="phone-filter">Videos<select id="phone-category" aria-label="Video category"></select></label>
-      <details class="phone-preferences"><summary>Phone settings</summary>
-        <label>Screen side<select id="phone-side"><option value="right">Right</option><option value="left">Left</option></select></label>
-        <label>Size<select id="phone-size"><option value="compact">Compact</option><option value="regular">Regular</option><option value="large">Large</option></select></label>
-        <label>Case<select id="phone-case"><option value="standard">Graphite</option><option value="christmas">Christmas red</option><option value="gold">Champagne gold</option></select></label>
-        <label>Phone volume<input id="phone-volume" type="range" min="0" max="1" step=".05"></label>
-        <label class="phone-check"><input id="phone-autopause" type="checkbox"> Pause on your turn</label>
-        <label class="phone-check"><input id="phone-key" type="checkbox"> P shortcut</label>
-        <label>Open local video<input id="phone-file" type="file" accept="video/mp4,video/webm,video/ogg,video/quicktime,video/*"></label>
-      </details>
-      <div class="phone-home" aria-hidden="true"></div>
-    </div></div><div class="phone-turn" aria-live="polite" hidden></div>`
-  const get=id=>host.querySelector('#phone-'+id)
-  const screen=host.querySelector('.phone-viewport')
-  const video=host.querySelector('video')
-  const button=host.querySelector('.phone-main-play')
-  const message=host.querySelector('.phone-media-error')
-  const progress=host.querySelector('progress')
-  const info=host.querySelector('.phone-video-copy')
-  let bookmarks
-  try{bookmarks=new Set(JSON.parse(localStorage.getItem(storageKey) || '[]'))}catch{bookmarks=new Set()}
-  let index=0,active,competitive=false,lastTurn=null,timer,startY=null,lastSwipe=0
-  const clips=[]
-  const clock=host.querySelector('time')
-  const layout=host.closest('.game-layout')
-  function theme(){
+      <div class="phone-status"><time></time><span class="handset-sensor" aria-hidden="true"><i></i></span>
+        <span title="Browser network status">${icon('wifi')} ${icon('battery-full')}</span></div>
+      <header class="phone-header"><strong>Side Reel</strong><div class="phone-window-actions">
+        ${iconButton('phone-lock','Lock phone','lock-keyhole')}
+        ${iconButton('phone-minimize','Minimize phone','minus')}
+        ${iconButton('phone-close','Close phone','x')}
+      </div></header>
+      <div class="handset-content" tabindex="-1"></div>
+      <nav class="handset-nav" aria-label="Phone navigation">
+        ${iconButton('phone-home','Phone Home','house')}<button type="button" class="handset-home-swipe" aria-label="Home gesture"></button>${iconButton('phone-recents','Recent apps','layers')}
+      </nav></div></div><div class="phone-turn" aria-live="polite" hidden></div>`
+  const body=host.querySelector('.handset-content')
+  const homeButton=host.querySelector('#phone-home')
+  const recentButton=host.querySelector('#phone-recents')
+  const heading=host.querySelector('.phone-header strong')
+  const time=host.querySelector('time')
+  const notice=host.querySelector('.phone-turn')
+  let app=null,active='home',blocked=false,locked=settings.phoneLock,turnKey,turnWasActive=false,serial=0,timer,arranging=false
+  let closeAnimation
+  let minimizedApp
+  let recent=read('recents',[]).filter(id=>apps[id])
+  const appStates=new Map()
+  const savedOrder=read('order',[])
+  const order=[...new Set([...savedOrder.filter(id=>apps[id]),...Object.keys(apps)])]
+  const musicState={}
+  const battery=host.querySelector('.phone-status>span:last-child')
+  navigator.getBattery?.().then(status=>{
+    const show=()=>{battery.title='Device battery '+Math.round(status.level*100)+'%'}
+    show()
+  }).catch(()=>{})
+
+  function appearance(){
     layout.dataset.phoneSide=settings.phoneSide
-    layout.dataset.phoneSize=settings.phoneSize
+    layout.dataset.phoneSize=active==='youtube' && settings.phoneSize==='compact'?'regular':settings.phoneSize
     host.dataset.case=settings.phoneCase
-    video.volume=settings.phoneVolume
-    video.muted=settings.phoneMuted
-    get('mute').setAttribute('aria-pressed',String(video.muted))
-    get('mute').setAttribute('aria-label',video.muted?'Unmute phone':'Mute phone')
+    host.dataset.frame=settings.phoneFrame
+    host.dataset.wallpaper=settings.phoneWallpaper
+    host.dataset.mode=settings.phoneMode
+    host.dataset.icons=settings.phoneIcons
+    host.dataset.motion=settings.phoneMotion
+    host.classList.toggle('quiet-motion',settings.phoneReduced || settings.reduced)
+    host.style.setProperty('--handset-brightness',settings.phoneBrightness)
   }
-  function roomClips(){return competitive?shows.filter(show=>show.category!=='Chess'):[...shows,...clips]}
-  function list(){
-    const chosen=get('category').value
-    return roomClips().filter(clip=>chosen==='all' || chosen==='saved' && bookmarks.has(clip.id) || chosen===clip.category)
+  function updateClock(){
+    time.textContent=clock.format(Date.now())
+    const lock=body.querySelector('.handset-lock strong')
+    if(lock)lock.textContent=time.textContent
   }
-  function showError(value){
-    message.hidden=!value
-    message.textContent=value || ''
+  function destroyApp(){
+    app?.destroy?.()
+    app=null
   }
-  function options(){
-    const filter=get('category'),current=filter.value
-    filter.replaceChildren()
-    for(const [id,label] of [['all','All videos'],['saved','Bookmarks'],...[...new Set(roomClips().map(clip=>clip.category))].map(value=>[value,value])]){
-      filter.append(new Option(label,id))
-    }
-    if([...filter.options].some(option=>option.value===current))filter.value=current
+  function chime(){
+    if(!settings.phoneNotices || !settings.phoneVolume)return
+    const audio=new Audio('/side-reel/tap.mp3')
+    audio.volume=settings.phoneVolume*.28
+    audio.play().catch(()=>{})
   }
-  function count(seconds){
-    const safe=Number.isFinite(seconds)?Math.floor(seconds):0
-    return Math.floor(safe/60)+':'+String(safe%60).padStart(2,'0')
-  }
-  function paintPlayback(){
-    const paused=video.paused || video.ended
-    button.hidden=!paused || !active
-    button.setAttribute('aria-label',video.ended?'Replay video':'Play video')
-    get('play').innerHTML=icon(paused?'play':'pause')
-    progress.value=Number.isFinite(video.duration)?video.currentTime/video.duration:0
-    host.querySelector('.phone-progress span').textContent=count(video.currentTime)
-    screen.classList.toggle('playing',!paused)
-  }
-  function pick(){
-    const possible=list()
-    index=Math.max(0,Math.min(index,possible.length-1))
-    const next=possible[index]
-    showError(null)
-    if(next!==active){
-      video.pause()
-      active=next
-      if(active){
-        video.src=active.source
-        video.poster=active.poster || ''
-      }else if(video.hasAttribute('src')){
-        video.removeAttribute('src')
-        video.removeAttribute('poster')
-        video.load()
+  function drawHome(){
+    body.replaceChildren()
+    const top=node('div','handset-home-title')
+    const name=node('h2','','Home')
+    const arrange=node('button','handset-text',arranging?'Done':'Arrange')
+    arrange.type='button'
+    arrange.onclick=()=>{arranging=!arranging;drawHome()}
+    top.append(name,arrange)
+    body.append(top)
+    const grid=node('div','handset-grid')
+    for(const [index,id] of order.entries()){
+      const [label,symbol,color]=apps[id]
+      const cell=node('div','handset-cell')
+      const button=node('button','handset-app')
+      button.type='button'
+      button.dataset.app=id
+      button.disabled=blocked && limited.has(id)
+      button.title=button.disabled?'Available after the match':label
+      const tile=node('span','handset-icon')
+      tile.dataset.ink=color
+      tile.innerHTML=icon(symbol)
+      button.append(tile,node('span','',label))
+      button.onclick=()=>open(id)
+      cell.append(button)
+      if(arranging){
+        const move=node('button','handset-order','‹')
+        move.type='button'
+        move.disabled=!index
+        move.setAttribute('aria-label','Move '+label+' earlier')
+        move.onclick=()=>{
+          ;[order[index-1],order[index]]=[order[index],order[index-1]]
+          store('order',order)
+          drawHome()
+        }
+        cell.append(move)
       }
+      grid.append(cell)
     }
-    info.querySelector('strong').textContent=active?.title || 'No videos in this view'
-    info.querySelector('small').textContent=active?.creator || ''
-    info.querySelector('p').textContent=active?.caption || ''
-    get('prev').disabled=index===0
-    get('next').disabled=index+1>=possible.length
-    get('save').disabled=!active
-    get('save').setAttribute('aria-pressed',String(Boolean(active && bookmarks.has(active.id))))
-    get('play').disabled=get('full').disabled=!active
-    paintPlayback()
+    body.append(grid)
+    const dock=node('div','handset-dock')
+    for(const id of ['clips','music','settings']){
+      const button=node('button','handset-dock-app')
+      button.type='button'
+      button.setAttribute('aria-label','Open '+apps[id][0])
+      button.innerHTML=icon(apps[id][1])
+      button.onclick=()=>open(id)
+      dock.append(button)
+    }
+    body.append(dock)
   }
-  function skip(delta){
-    const next=index+delta
-    if(next<0 || next>=list().length)return
-    index=next
-    pick()
+  function drawLock(){
+    body.innerHTML='<div class="handset-lock"><span></span><strong></strong><button type="button">Unlock</button></div>'
+    const panel=body.firstChild
+    panel.querySelector('span').textContent=date.format(Date.now())
+    panel.querySelector('button').onclick=()=>open('home')
+    let y
+    panel.addEventListener('touchstart',event=>{y=event.changedTouches[0].clientY},{passive:true})
+    panel.addEventListener('touchend',event=>{if(y-event.changedTouches[0].clientY>26)open('home')},{passive:true})
+    updateClock()
   }
-  async function togglePlay(){
-    if(!active)return
-    if(!video.paused && !video.ended){video.pause();return}
-    if(video.ended)video.currentTime=0
-    try{await video.play();showError(null)}
-    catch{showError('This video could not play. Try another file in MP4 or WebM.')}
+  function drawRecents(){
+    body.replaceChildren(node('h2','handset-page-title','Recent apps'))
+    if(!recent.length)body.append(node('p','handset-note','Apps you open appear here.'))
+    for(const id of recent){
+      const [label,symbol,color]=apps[id]
+      const button=node('button','handset-recent')
+      button.type='button'
+      button.disabled=blocked && limited.has(id)
+      const tile=node('span','handset-icon')
+      tile.dataset.ink=color;tile.innerHTML=icon(symbol)
+      button.append(tile,node('strong','',label))
+      button.onclick=()=>open(id)
+      body.append(button)
+    }
   }
-  function clockFace(){clock.textContent=new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}).format(Date.now())}
-  function close(){
-    if(host.hidden)return
-    video.pause()
-    host.hidden=true
-    layout.classList.remove('phone-open')
-    document.getElementById('phone-toggle')?.setAttribute('aria-pressed','false')
-    clearInterval(timer)
+  function drawSettings(){
+    for(const [key,label,choices] of settingsFields){
+      const row=node('label','handset-setting')
+      row.append(node('span','',label))
+      const field=document.createElement(choices===true || Array.isArray(choices)?'input':'select')
+      if(choices===true){field.type='checkbox';field.checked=Boolean(settings[key])}
+      else if(Array.isArray(choices)){
+        field.type='range'
+        ;[field.min,field.max,field.step]=choices
+        field.value=settings[key]
+      }else field.innerHTML=optionRows(choices,settings[key])
+      field.oninput=()=>{
+        settings[key]=field.type==='checkbox'?field.checked:field.type==='range'?Number(field.value):field.value
+        appearance()
+        if(key==='phoneMusicContinue' && !settings[key])musicState.audio?.pause()
+        save()
+      }
+      row.append(field);body.append(row)
+    }
   }
-  get('close').onclick=close
-  get('minimize').onclick=close
-  get('prev').onclick=()=>skip(-1)
-  get('next').onclick=()=>skip(1)
-  get('play').onclick=button.onclick=togglePlay
-  get('mute').onclick=()=>{settings.phoneMuted=!settings.phoneMuted;save();theme()}
-  get('full').onclick=async()=>{
+  async function open(id){
+    if(blocked && limited.has(id))return
+    const token=++serial
+    const prev=active
+    destroyApp()
+    if((prev==='music' && !settings.phoneMusicContinue) || !['home','recent','music'].includes(id))musicState.audio?.pause()
+    active=id
+    locked=id==='lock'
+    homeButton.disabled=locked
+    recentButton.disabled=locked
+    if(id!=='home')arranging=false
+    body.scrollTop=0
+    body.dataset.view=id
+    host.dataset.app=id
+    heading.textContent=apps[id]?.[0] || 'Side Reel'
+    appearance()
+    body.replaceChildren()
+    if(id==='home'){drawHome();return}
+    if(id==='lock'){drawLock();return}
+    if(id==='recent'){drawRecents();return}
+    recent=[id,...recent.filter(entry=>entry!==id)].slice(0,6)
+    store('recents',recent)
+    if(id==='settings'){drawSettings();return}
+    body.append(node('p','handset-note','Opening '+apps[id][0]+'…'))
     try{
-      if(document.fullscreenElement)await document.exitFullscreen()
-      else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen()
-      else await video.requestFullscreen()
-    }catch{showError('Fullscreen video is unavailable in this browser.')}
-  }
-  get('save').onclick=()=>{
-    if(!active)return
-    if(bookmarks.has(active.id))bookmarks.delete(active.id)
-    else bookmarks.add(active.id)
-    try{localStorage.setItem(storageKey,JSON.stringify([...bookmarks].filter(key=>shows.some(clip=>clip.id===key))))}catch{}
-    pick()
-  }
-  get('category').onchange=()=>{index=0;pick()}
-  for(const [id,key] of [['side','phoneSide'],['size','phoneSize'],['case','phoneCase'],['volume','phoneVolume'],
-    ['autopause','phoneAutopause'],['key','phoneShortcut']]){
-    const field=get(id)
-    if(field.type==='checkbox')field.checked=settings[key]
-    else field.value=settings[key]
-    field.oninput=()=>{
-      settings[key]=field.type==='checkbox'?field.checked:field.type==='range'?+field.value:field.value
-      save()
-      theme()
+      const module=await apps[id][3]()
+      if(token!==serial || host.hidden)return
+      body.replaceChildren()
+      const state=id==='music'?musicState:appStates.get(id) || {}
+      appStates.set(id,state)
+      app=module.mount(body,{id,settings,save,blocked:()=>blocked,state})
+      body.focus({preventScroll:true})
+    }catch{
+      if(token!==serial)return
+      body.replaceChildren(node('p','handset-note','This app could not open. Return Home and try again.'))
     }
   }
-  get('file').onchange=()=>{
-    if(competitive)return
-    const file=get('file').files?.[0]
-    if(!file)return
-    if(file.type && !file.type.startsWith('video/')){showError('Choose a video file.');return}
-    if(clips.length>=8){
-      const old=clips.shift()
-      if(active===old)video.pause()
-      bookmarks.delete(old.id)
-      URL.revokeObjectURL(old.source)
-    }
-    const id='local-'+crypto.randomUUID()
-    clips.push({id,title:file.name,category:'My files',creator:'Local video',caption:'',source:URL.createObjectURL(file)})
-    options()
-    get('category').value='My files'
-    index=clips.length-1
-    pick()
-    get('file').value=''
+  function pause(){
+    app?.pause?.()
+    musicState.audio?.pause()
   }
-  screen.addEventListener('wheel',event=>{
-    if(Math.abs(event.deltaY)<12)return
-    event.preventDefault()
-    if(performance.now()-lastSwipe<360)return
-    lastSwipe=performance.now()
-    skip(Math.sign(event.deltaY))
-  },{passive:false})
-  screen.addEventListener('touchstart',event=>{startY=event.changedTouches[0].clientY},{passive:true})
-  screen.addEventListener('touchend',event=>{
-    const distance=startY===null?0:startY-event.changedTouches[0].clientY
-    if(Math.abs(distance)>35)skip(Math.sign(distance))
-    startY=null
-  },{passive:true})
-  screen.addEventListener('keydown',event=>{
-    const delta={ArrowUp:-1,ArrowDown:1}[event.key]
-    if(!delta)return
-    event.preventDefault()
-    skip(delta)
-  })
-  for(const event of ['play','pause','timeupdate','loadedmetadata','ended'])video.addEventListener(event,paintPlayback)
-  video.addEventListener('error',()=>{if(active)showError('This video could not load.')})
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)video.pause()})
-  options()
-  theme()
+  function close(minimize=false){
+    if(host.hidden || closeAnimation)return
+    const previous=active
+    minimizedApp=minimize && apps[previous]?previous:null
+    pause()
+    destroyApp()
+    ++serial
+    if(previous==='lock')locked=true
+    else locked=settings.phoneLock
+    launcher?.setAttribute('aria-pressed','false')
+    clearInterval(timer)
+    if(host.contains(document.activeElement))launcher?.focus({preventScroll:true})
+    const finish=()=>{
+      host.hidden=true
+      layout.classList.remove('phone-open')
+      closeAnimation=null
+    }
+    if(settings.phoneReduced || settings.reduced || !host.animate){finish();return}
+    if(closeAnimation)return
+    closeAnimation=host.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(25px)'}],{duration:160})
+    closeAnimation.onfinish=finish
+  }
+  host.querySelector('#phone-close').onclick=()=>close()
+  host.querySelector('#phone-minimize').onclick=()=>close(true)
+  host.querySelector('#phone-lock').onclick=()=>open(locked?'home':'lock')
+  homeButton.onclick=()=>open('home')
+  recentButton.onclick=()=>open('recent')
+  const homeSwipe=host.querySelector('.handset-home-swipe')
+  homeSwipe.onclick=()=>{if(!locked)open('home')}
+  let gestureY
+  homeSwipe.onpointerdown=event=>{gestureY=event.clientY;homeSwipe.setPointerCapture(event.pointerId)}
+  homeSwipe.onpointerup=event=>{if(!locked && gestureY-event.clientY>17)open('home')}
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)pause()})
   return {
     toggle(){
+      if(closeAnimation){
+        closeAnimation.cancel()
+        closeAnimation=null
+        host.hidden=true
+      }
       if(!host.hidden){close();return}
       host.hidden=false
+      launcher?.setAttribute('aria-pressed','true')
       layout.classList.add('phone-open')
-      document.getElementById('phone-toggle')?.setAttribute('aria-pressed','true')
-      clockFace()
-      timer=setInterval(clockFace,30000)
-      pick()
+      updateClock()
+      timer=setInterval(updateClock,15000)
+      const next=locked && settings.phoneLock?'lock':minimizedApp && !(blocked && limited.has(minimizedApp))?minimizedApp:'home'
+      minimizedApp=null
+      open(next)
     },
     close,
-    update({label,ownTurn,key,blocked}){
-      if(competitive!==blocked){
-        competitive=blocked
-        get('file').disabled=blocked
-        options()
-        if(!host.hidden)pick()
+    update(update){
+      if(blocked!==update.blocked){
+        blocked=update.blocked
+        if(blocked && limited.has(active))open('home')
+        else if(active==='home' && !host.hidden)drawHome()
+        else if(active==='recent' && !host.hidden)drawRecents()
+        app?.update?.(blocked)
       }
-      const turn=host.querySelector('.phone-turn')
-      turn.hidden=!ownTurn
-      turn.textContent=label
-      if(ownTurn && key!==lastTurn && settings.phoneAutopause && !host.hidden)video.pause()
-      lastTurn=key
+      notice.hidden=!update.ownTurn
+      const label=update.label==='White to move' || update.label==='Black to move'?update.label:'Your turn'
+      if(notice.textContent!==label)notice.textContent=label
+      const newTurn=update.ownTurn && (!turnWasActive || update.key!==turnKey)
+      if(newTurn && !host.hidden){
+        if(settings.phoneGamePause && gameApps.has(active))app?.pause?.()
+        if(settings.phoneAutopause && ['youtube','comedy','clips'].includes(active))app?.pause?.()
+        chime()
+      }
+      turnWasActive=update.ownTurn
+      turnKey=update.key
     },
   }
 }
