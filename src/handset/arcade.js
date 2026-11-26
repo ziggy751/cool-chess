@@ -443,7 +443,7 @@ export function mount(host,services){
       if(!soundtrack){
         soundtrack=new Audio('/side-reel/records/shuttle.mp3')
         soundtrack.loop=true
-        soundtrack.volume=settings.phoneVolume*.54
+        soundtrack.volume=(settings.phoneArcadeVolume ?? settings.phoneVolume)*.54
       }
       soundtrack.enabled=!soundtrack.enabled
       audio.textContent=soundtrack.enabled?'Runner sound on':'Runner sound off'
@@ -456,7 +456,7 @@ export function mount(host,services){
   const game={score:0,options,status:text=>{status.textContent=text},
     add(value){
       this.score+=value;score.textContent=String(this.score)
-      if(settings.phoneArcadeSound)arcadeCue('point',settings.phoneVolume)
+      if(settings.phoneArcadeSound)arcadeCue('point',(settings.phoneArcadeVolume ?? settings.phoneVolume))
       showLapRecord()
       if(options.mode!=='practice' && this.score>record){
         record=this.score;best.textContent=String(record);store('best-'+id,record)
@@ -464,7 +464,7 @@ export function mount(host,services){
     },end(complete=false){
       finished=true;stop()
       if(!complete)status.textContent='Run complete'
-      if(settings.phoneArcadeSound)arcadeCue('end',settings.phoneVolume)
+      if(settings.phoneArcadeSound)arcadeCue('end',(settings.phoneArcadeVolume ?? settings.phoneVolume))
       action.textContent='Play again'
     }
   }
@@ -498,7 +498,7 @@ export function mount(host,services){
   function control(key){
     if(finished)reset()
     if(!running){start();pause.disabled=false}
-    if(id==='wings' && key==='Space' && settings.phoneArcadeSound)arcadeCue('action',settings.phoneVolume)
+    if(id==='wings' && key==='Space' && settings.phoneArcadeSound)arcadeCue('action',(settings.phoneArcadeVolume ?? settings.phoneVolume))
     gameModel.act(state,key,game)
   }
   action.onclick=()=>control('Space')

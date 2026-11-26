@@ -1,3 +1,5 @@
+import {seasonScripts} from './meme-season.js'
+
 const castRows=[
  ['Badge','rook','mint','caseworker'],['Kev-9','robot','orange','trainee'],['Kanga Max','hare','gold','shopper'],
  ['Nibs','bird','cyan','operator'],['The Binspector','ibis','cream','health inspector'],['Eject','appliance','red','toaster'],
@@ -16,6 +18,9 @@ const castRows=[
  ['Byte Mark','elf','cyan','sound engineer'],['Laneway','ibis','cream','traffic reporter'],['Plywood','pawn','gold','builder'],
  ['Signal','helmet','mint','radio engineer'],['Director Salad','potato','mint','film director'],['Toastie','appliance','peach','cafe owner'],
  ['Bandaid','blob','orange','physicist'],['Canteen','scroll','cyan','mission controller'],
+ ['Latch','key','gold','spare key with a travel card'],['Five-Pin','lock','cyan','municipal lock and chess rival'],
+ ['Pixel May','helmet','lilac','late-night stream engineer'],['Yamwell','potato','orange','Aero desktop administrator'],
+ ['Boot Script','robot','mint','glossy desktop help agent'],
 ]
 export const cast=Object.fromEntries(castRows.map(([name,shape,color,role],id)=>[id,{id,name,shape,color,role,voice:id%20}]))
 export const colors={mint:'#7cdcb6',orange:'#ef9c56',gold:'#ebc470',cyan:'#75c9e8',cream:'#f0dfb4',red:'#e66f70',lilac:'#ad9aed',rose:'#f599bb',peach:'#e7a996'}
@@ -44,7 +49,7 @@ const inventories={
  food:['Sandwich','Hot chips','Banana','Pie','Potato','Bread','Cheese','Pickle','Dumpling','Cereal'],
  trophy:['Pawn','Knight','Rook','Rubber duck','Medal','Globe','Crown','Trophy','Bell','Chess clock'],
  weather:['Snow globe','Moon','Cloud','Sun','Comet','Planet','Moon rock','Artificial wave','Lightning globe','Ice cube'],
- workshop:['Wrapping roll','Traffic cone','Cable reel','Wrench','Remote switch','Spanner','Snow brush','Paint roller','Stamp','Magnet'],
+ workshop:['Wrapping roll','Keycard','Cable reel','Wrench','Remote switch','Spanner','Snow brush','Paint roller','Stamp','Magnet'],
 }
 export const props=Object.entries(inventories).flatMap(([kind,items])=>items.map((name,variant)=>({name,kind,variant})))
 export const propNamed=name=>props.find(prop=>prop.name===name)
@@ -125,7 +130,7 @@ const extraScripts=[
  ['Delivery in Geostationary',3,'Cargo crate',12,21,'I ordered next-day delivery to the station.','The package has been orbiting us since June.','It only goes out for delivery when we overtake it.','Please send the tracking number to the propulsion desk.'],
  ['A Very Small Meteor',0,'Moon rock',13,19,'It looked like a small meteor on the radar.','That’s a single crouton.','It entered the atmosphere at soup velocity.','Seal the lab. We’re expecting a second course.'],
  ['The Mailbox Refuses',17,'Mailbox',26,27,'The mailbox sent us an undeliverable notice.','Who was it addressed to?','Itself, for refusing to accept mail.','Leave the keys in the letter slot. We’re changing the locks.'],
- ['Point Taken',8,'Traffic cone',30,20,'The traffic cone has called an expert witness.','It’s pointing directly at the defendant.','That’s its only available gesture.','Fine. Put the tip under oath.'],
+ ['Point Taken',8,'Paint roller',30,20,'The traffic cone has called an expert witness.','It’s pointing directly at the defendant.','That’s its only available gesture.','Fine. Put the tip under oath.'],
  ['Receipt with Legs',1,'Receipt scanner',2,28,'My receipt walked away before I could read it.','Was it printed on the fast setting?','It sprinted past the basket carrying my change.','Ring up a refund under track and field.'],
  ['Dinner for a Router',19,'Menu',49,6,'Table eight says their meal won’t connect.','They ordered the Wi-Fi password.','The waiter wrote it on the side of a baked potato.','Tell them the butter is case-sensitive.'],
  ['Floating Fees',18,'Complaint',44,36,'The complaint says the view keeps moving.','Your house is on a floating island.','The island is charging us by the minute.','We didn’t open a window. It shouldn’t count as streaming.'],
@@ -190,4 +195,6 @@ const extraScripts=[
 for(const [title,stage,prop,lead,support,...lines] of extraScripts)
   scripts.push([title,stage,prop,[lead,support],[support,lead],...lines])
 
-export const stories=scripts.map(([title,stage,prop,lead,support,...lines],id)=>({id,title,stage,prop:propNamed(prop) || propNamed('Bread'),lead,support,lines}))
+export const legacyStories=scripts.map(([title,stage,prop,lead,support,...lines],id)=>({id,title,stage,prop:propNamed(prop) || propNamed('Bread'),lead,support,lines}))
+
+export const stories=[...legacyStories,...seasonScripts.map((story,index)=>({...story,id:legacyStories.length+index,prop:propNamed(story.prop)}))]

@@ -1,4 +1,5 @@
-import {cast,stages,props,editStyles,cameras,expressions,movements,voices,sounds,beds,stories,colors} from './meme-library.js'
+import {cast,stages,props,editStyles,cameras,expressions,movements,voices,sounds,beds,stories,legacyStories,colors} from './meme-library.js'
+import {formatsV2} from './meme-season.js'
 
 export const width=288
 export const height=512
@@ -13,15 +14,22 @@ const hash=value=>{
   return (result>>>0).toString(16).padStart(8,'0')
 }
 const clocks=[0,2.05,5.25,8.9,12.45,16,clipDuration]
+const seasonSeed=1_000_000
+export const categories=Object.fromEntries(Object.entries(formatsV2).map(([id,value])=>[id,value.label]))
+export const seedForStory=index=>seasonSeed+index
 export function makeShort(seed){
-  const story=pick(stories,seed)
-  const version=Math.floor(seed/stories.length)
+  const universe=seed>=seasonSeed?stories:legacyStories
+  const serial=seed>=seasonSeed?seed-seasonSeed:seed
+  const story=pick(universe,serial)
+  const version=Math.floor(serial/universe.length)
+  const format=story.format?formatsV2[story.format]:null
+  const timing=format?.timing || clocks
   const a=cast[pick(story.lead,version)],b=cast[pick(story.support,version*3+Math.floor(version/2))]
-  const style=pick(editStyles,seed*11+version),stage=stages[story.stage]
+  const style=format?{name:format.label,effect:format.effect}:pick(editStyles,seed*11+version),stage=stages[story.stage]
   const reel=String(101+seed%890).padStart(3,'0')
-  const lines=['A Side Reel fiction',...story.lines,'END OF RECORDING']
+  const lines=[format?.universe || 'A Side Reel fiction',...story.lines,'END OF RECORDING']
   const timeline=lines.map((line,index)=>({
-    from:clocks[index],to:clocks[index+1],line,speaker:index%2?a:b,
+    from:timing[index],to:timing[index+1],line,speaker:index%2?a:b,shot:format?.shots[index] || ['witness','object','witness','rival','object','archive'][index],
     camera:pick(cameras,seed*3+index*7+[0,0,4,3,6,1][index]),
     direction:index%2?1:-1,
     expressions:[(seed+index*7)%expressions.length,(seed*2+index*13+4)%expressions.length],
@@ -29,26 +37,32 @@ export function makeShort(seed){
     sound:pick(sounds,seed*7+index*11),
     speaks:index>0 && index<5,
   }))
-  return {seed,id:hash(seed+'|'+story.title+'|'+a.name+'|'+b.name+'|'+style.effect),story:story.id,name:a.name,title:story.title,a,b,stage,style,reel,
+  return {seed,id:hash(seed+'|'+story.title+'|'+a.name+'|'+b.name+'|'+style.effect),story:story.id,name:a.name,title:story.title,a,b,stage,style,reel,format:story.format || 'classic',universe:format?.universe || 'Side Reel Archives',
     prop:story.prop,setDressing:pick(props,seed*7+story.id*11),timeline,punchline:story.lines[3],pair:[a.id,b.id].sort((x,y)=>x-y).join('-'),bed:pick(beds,seed*13)}
 }
-export function nextBatch(history,seed,count=3){
+export function nextBatch(history,seed,count=3,category='all'){
   const recent=history.slice(-9)
   const used=new Set(history.map(clip=>clip.story))
-  const lastPair=new Set(recent.map(clip=>clip.pair))
-  const lastEdit=new Set(recent.slice(-3).map(clip=>clip.style))
-  const lastWords=recent.map(clip=>new Set(clip.punchline.toLowerCase().match(/[a-z]{4,}/g)))
-  const clipHistory=(clip)=>({id:clip.id,story:clip.story,pair:clip.pair,punchline:clip.punchline,style:clip.style.effect,seed:clip.seed})
+  const lastPair=new Set(category==='all'?recent.slice(-5).map(clip=>clip.pair):[])
+  const lastEdit=new Set(category==='all'?recent.slice(-3).map(clip=>clip.style):[])
+  const wordsIn=text=>new Set(text.toLowerCase().match(/[a-z]{4,}/g))
+  const recentWords=recent.map(clip=>({punchline:wordsIn(clip.punchline),script:clip.script?wordsIn(clip.script):null}))
+  const similarity=(a,b)=>[...a].filter(word=>b.has(word)).length/Math.max(1,a.size,b.size)
+  const script=clip=>clip.timeline.filter(cue=>cue.speaks).map(cue=>cue.line).join(' ')
+  const clipHistory=clip=>({id:clip.id,story:clip.story,pair:clip.pair,punchline:clip.punchline,script:script(clip),style:clip.style.effect,seed:clip.seed})
   const similar=clip=>{
-    const words=new Set(clip.punchline.toLowerCase().match(/[a-z]{4,}/g))
-    return lastWords.some(previous=>[...words].filter(word=>previous.has(word)).length/Math.max(words.size,previous.size)>.48)
+    const words=wordsIn(clip.punchline),lines=wordsIn(script(clip))
+    return recentWords.some(previous=>similarity(words,previous.punchline)>.48 || previous.script && similarity(lines,previous.script)>.65)
+
   }
   const result=[]
   for(let offset=0;offset<stories.length*3 && result.length<count;offset++){
-    const clip=makeShort(seed+offset*13)
+    const clip=makeShort(seasonSeed+seed+offset*13)
+    if(category!=='all' && clip.format!==category)continue
     if(used.has(clip.story) || lastPair.has(clip.pair) || lastEdit.has(clip.style.effect) || similar(clip))continue
     result.push(clip)
-    used.add(clip.story);lastPair.add(clip.pair);lastEdit.add(clip.style.effect)
+    used.add(clip.story)
+    if(category==='all' && offset<stories.length){lastPair.add(clip.pair);lastEdit.add(clip.style.effect)}
   }
   history.push(...result.map(clipHistory))
   return result
@@ -190,7 +204,13 @@ function drawCharacter(ctx,character,expression,movement,t,talking,side){
       oval(ctx,foot*(29+bob*3),25+side*bob*3,5,5,tone)
     }
   }
-  if(shape==='ibis' || shape==='duck' || shape==='bird'){
+  if(shape==='key'){
+    oval(ctx,-3,-13,27,28,'#d6a257');oval(ctx,-3,-13,20,20,tone);oval(ctx,-3,-13,10,10,'#242138')
+    box(ctx,-9,3,16,34,tone,2);box(ctx,5,22,10,6,'#f6d98f');box(ctx,5,31,14,6,'#ddae6a',2)
+  }else if(shape==='lock'){
+    ctx.strokeStyle='#d5d8db';ctx.lineWidth=7;ctx.beginPath();ctx.arc(0,-16,18,Math.PI,Math.PI*2);ctx.stroke()
+    box(ctx,-28,-14,56,47,tone,8);box(ctx,-23,11,46,5,'#44869d',2)
+  }else if(shape==='ibis' || shape==='duck' || shape==='bird'){
     oval(ctx,0,13,30,26,sideColor);oval(ctx,-1,15,14,18,'#ece6d8')
     oval(ctx,0,-12,24,24,shape==='bird'?'#2d3847':tone)
     if(shape==='ibis')poly(ctx,'#252739',8,-14,46,-6,39,4,14,2)
@@ -267,6 +287,93 @@ function editing(ctx,effect,time,amount,light){
   }
   ctx.restore()
 }
+function setDesign(ctx,format,t,light){
+  if(format==='archive'){
+    const filter=ctx.createLinearGradient(0,0,width,0)
+    filter.addColorStop(0,'#0c182bee');filter.addColorStop(.48,'#34465758');filter.addColorStop(1,'#14182dee')
+    box(ctx,0,44,width,264,filter)
+    for(const x of [38,248]){
+      box(ctx,x-5,56,10,192,'#536075')
+      for(let n=0;n<9;n++)line(ctx,x-10,61+n*20,x+6,56+n*20,'#c3a68a8c',2)
+    }
+    box(ctx,5,101,30,18,'#2d3448');label(ctx,'04',11,113,9,'#ecd2a7','left',true)
+  }else if(format==='opera' || format==='montage'){
+    box(ctx,0,71,width,182,format==='opera'?'#48243aab':'#19384ca8')
+    for(let n=0;n<18;n++){
+      const x=n*18-8,y=279+Math.sin(n*3+t*.4)*4
+      oval(ctx,x,y,13,8,n%2?'#171b2d':'#2a2537')
+      oval(ctx,x,y-9,4,5,light+'69')
+    }
+    box(ctx,19,284,250,18,'#263347');box(ctx,31,287,226,2,light)
+    if(format==='opera'){
+      for(let n=0;n<12;n++)line(ctx,n*24,47,n*24-3,163,n%2?'#672f4b':'#915568',6)
+    }else box(ctx,96,63,96,24,'#1a283b',3)
+    label(ctx,format==='opera'?'GRAND STAGE':'ROUND 04',144,81,10,light,'center',true)
+  }else if(format==='desktop'){
+    const shade=ctx.createLinearGradient(0,39,0,308)
+    shade.addColorStop(0,'#3886bc');shade.addColorStop(.45,'#84b7be');shade.addColorStop(.46,'#536f69');shade.addColorStop(1,'#225966')
+    box(ctx,0,35,width,288,shade)
+    oval(ctx,230,95,42,39,'#e5dec4ac')
+    poly(ctx,'#3e776a',0,192,61,145,137,177,220,151,289,170,289,263,0,263)
+    poly(ctx,'#327682',0,211,94,194,289,215,289,300,0,300)
+    for(let n=0;n<10;n++)line(ctx,13+n*7,223+n*5,94+n*8,223+n*5,'#a4e9e47f',1)
+    box(ctx,0,302,width,18,'#1c6e99');box(ctx,7,305,60,12,'#338063',4)
+    label(ctx,'START',17,314,8,'#f8ffee','left',true)
+  }else if(format==='boardroom'){
+    box(ctx,0,53,width,223,'#473a40cf')
+    for(let j=0;j<5;j++){
+      box(ctx,j*58+8,65,46,145,'#183142',1)
+      for(let n=0;n<13;n++)box(ctx,j*58+10+n*5%37,80+n*7,3,2,light+'70')
+      box(ctx,j*58+8,138,46,3,'#7b6561')
+    }
+    poly(ctx,'#2b2634',46,275,246,275,286,312,2,312)
+    line(ctx,8,311,280,311,light+'91',3)
+  }else if(format==='hotline' || format==='broadcast'){
+    box(ctx,0,52,width,214,'#202335dc')
+    for(let i=0;i<19;i++){
+      const top=99+(i*29%87),x=7+i*16
+      box(ctx,x,top,13,176-top, i%3?'#222d49':'#503348',2)
+    }
+    box(ctx,19,77,111,16,format==='hotline'?'#673d58':'#324d6d',3)
+    label(ctx,format==='hotline'?'ON AIR  /  CH.−1':'EVENING BULLETIN',25,88,8,'#f8e2c8','left',true)
+    box(ctx,20,294,248,11,'#52394b',3)
+  }
+}
+
+function viewDressing(ctx,shot,t,light){
+  if(shot==='orbit'){
+    const planet=ctx.createRadialGradient(180,133,3,180,133,105)
+    planet.addColorStop(0,light);planet.addColorStop(.43,'#906f87');planet.addColorStop(1,'#2b3651')
+    oval(ctx,181,145,98,82,planet)
+    ctx.strokeStyle='#eac9a7a0';ctx.lineWidth=12;ctx.beginPath();ctx.ellipse(179,149,129,31,-.29,0,Math.PI*2);ctx.stroke()
+  }else if(shot==='desktop'){
+    box(ctx,13,69,220,166,'#b2e4e188',8);box(ctx,17,76,210,21,'#367a8a',4)
+    label(ctx,'AERO WORKSPACE',26,89,8,'#f8ffff','left',true)
+    for(let j=0;j<17;j++){
+      const x=j*41%268,y=67+((j*39-t*23+500)%170),r=3+j%5
+      oval(ctx,x,y,r,r,'#e3f6fe78');oval(ctx,x-1,y-1,Math.max(1,r*.36),Math.max(1,r*.36),'#fffffba6')
+    }
+  }else if(shot==='arena'){
+    for(let i=0;i<3;i++){
+      const x=60+i*84,angle=Math.sin(t*.6+i)*50
+      poly(ctx,[light+'53','#d8bbe64a','#8dc7ed4a'][i],x,63,x+angle-88,355,x+angle+88,355)
+    }
+  }else if(shot==='stream'){
+    box(ctx,178,66,95,99,'#131b2ce3',3);box(ctx,181,69,88,3,light)
+    for(let i=0;i<4;i++){
+      box(ctx,185,82+i*17,8,7,[light,'#e3a9c6','#c1d2f1','#b1d7b4'][i],2)
+      box(ctx,198,84+i*17,27+(i*17)%42,3,'#a8b8cf76',1)
+    }
+  }else if(shot==='archive'){
+    const border=31
+    for(const x of [border,width-border])for(const y of [65,316]){
+      line(ctx,x,y,x+(x<100?1:-1)*16,y,'#e7e6c6',1.1)
+      line(ctx,x,y,x,y+(y<100?1:-1)*17,'#e7e6c6',1.1)
+    }
+    label(ctx,'CAM 04   /   ARCHIVE',width-31,313,8,light,'right',true)
+  }
+}
+
 export function render(ctx,clip,elapsed,reduced){
   const t=clamp(elapsed,0,clipDuration)
   const part=clip.timeline.find(cue=>t>=cue.from && t<cue.to) || clip.timeline.at(-1)
@@ -284,19 +391,45 @@ export function render(ctx,clip,elapsed,reduced){
   if(!reduced)ctx.rotate(cam.roll)
   ctx.translate(-width/2,-218)
   drawStage(ctx,clip.stage,motionTime)
-  ctx.save();ctx.translate(237,201);ctx.scale(.58,.58);drawProp(ctx,clip.setDressing,light,motionTime);ctx.restore()
-  for(const [i,character] of [clip.a,clip.b].entries()){
-    const talk=part.speaks && part.speaker===character && local>.16 && local<part.to-part.from-.22
-    ctx.save()
-    ctx.translate(i===0?86:203,i===0?228:233)
-    ctx.scale(i===0?1.32:1.19,i===0?1.32:1.19)
-    drawCharacter(ctx,character,expressions[part.expressions[i]],part.movement,motionTime,talk && !reduced,part.direction)
-    ctx.restore()
+  setDesign(ctx,clip.format,motionTime,light)
+  viewDressing(ctx,part.shot,motionTime,light)
+  const isObject=part.shot==='object'
+  const wide=['arena','archive','orbit'].includes(part.shot)
+  const impact=t>=clip.timeline[4].from && t<clip.timeline[4].from+1.15 && !reduced
+  if(impact){
+    for(let i=0;i<9;i++){
+      const a=i*2.399,r=(28+local*104)*(.5+i%4*.2)
+      const cx=width/2+Math.cos(a)*r,cy=226+Math.sin(a)*r
+      box(ctx,cx,cy,2+i%3,2,light+'ba',1)
+    }
   }
-  poly(ctx,'#262f42',37,287,246,287,289,332,0,332)
-  box(ctx,0,331,width,11,'#1e2737')
-  line(ctx,5,330,285,330,light+'aa',1)
-  ctx.save();ctx.translate(144,316);ctx.scale(1.18,1.18);drawProp(ctx,clip.prop,light,motionTime);ctx.restore()
+  if(!isObject){
+    for(const [i,character] of [clip.a,clip.b].entries()){
+      const talk=part.speaks && part.speaker===character && local>.16 && local<part.to-part.from-.22
+      if(['witness','rival'].includes(part.shot) && part.speaks && !talk && part.speaker!==character)continue
+      if(part.shot==='stream' && i===1)continue
+      const swap=i===0?1:-1
+      const step=wide && !reduced?Math.sin(motionTime*3+i*1.7)*19:0
+      ctx.save()
+      ctx.translate((wide?(i===0?74:207):part.shot==='stream'?103:144)+step,wide?246:221)
+      const size=wide?1.11:part.shot==='stream'?1.48:1.66
+      ctx.scale(size*(part.shot==='rival'?-1:1),size)
+      drawCharacter(ctx,character,expressions[part.expressions[i]],part.movement,motionTime,talk && !reduced,swap)
+      ctx.restore()
+    }
+  }
+  if(isObject || part.shot==='desktop'){
+    const movement=reduced?0:Math.sin(motionTime*4.3)*12
+    oval(ctx,144,295,63,11,'#101421')
+    ctx.save();ctx.translate(144+movement,236+Math.sin(motionTime*3)*6)
+    ctx.rotate(reduced?0:Math.sin(motionTime*3)*.24)
+    ctx.scale(isObject?2.25:1.55,isObject?2.25:1.55)
+    drawProp(ctx,clip.prop,light,motionTime);ctx.restore()
+  }else{
+    ctx.save()
+    ctx.translate(part.shot==='stream'?207:144,wide?299:313)
+    ctx.scale(1.12,1.12);drawProp(ctx,clip.prop,light,motionTime);ctx.restore()
+  }
   ctx.restore()
   const footer=ctx.createLinearGradient(0,335,0,height)
   footer.addColorStop(0,'#0b101400');footer.addColorStop(.18,'#0c101bde');footer.addColorStop(1,'#080c14')
@@ -307,7 +440,7 @@ export function render(ctx,clip,elapsed,reduced){
   label(ctx,Math.floor(t).toString().padStart(2,'0')+' SEC',265,28,9,'#e4dfdb','right',true)
   if(!part.speaks){
     box(ctx,0,352,width,103,'#101421ed');box(ctx,21,360,30,2,light)
-    label(ctx,clip.style.name.toUpperCase(),width/2,381,10,light,'center',true)
+    label(ctx,clip.universe.toUpperCase(),width/2,381,10,light,'center',true)
     wrapped(ctx,t<3?clip.title:part.line,width/2,409,t<3?23:17,'#f6eedf',248)
   }else{
     label(ctx,part.speaker.name.toUpperCase(),width/2,384,10,light,'center',true)
@@ -338,11 +471,17 @@ export function makeAudio(){
   return {
     volume(level){master.gain.value=level*.52},
     resume(){context.resume().catch(()=>{})},
-    cue(sound,bed,section){
+    cue(sound,bed,section,format){
       const start=context.currentTime+.012
-      synth(sound.frequency,sound.end,sound.type,.34,sound.time,start)
+      const impact=section===4
+      if(impact && ['archive','broadcast','stream','cctv'].includes(format))synth(89,31,'sine',.58,.30,start)
+      if(format==='montage' || format==='opera'){
+        for(const [j,beat] of [0,.11,.27].entries()){
+          synth(format==='opera'?frequency(47+9*j):155+j*16,format==='opera'?frequency(46+9*j):44,'triangle',.29,.088,start+beat)
+        }
+      }else synth(sound.frequency,sound.end,sound.type,.34,sound.time,start)
       if(sound.noise)synth(sound.frequency*1.89,sound.end*1.64,'triangle',sound.noise,sound.time*.73,start+.024)
-      if(section===3)return
+      if(section===3 && ['archive','cctv','stream'].includes(format))return
       for(const [i,note] of bed.notes.entries())
         synth(frequency(note),frequency(note),bed.wave,.075,bed.pace*.86,start+.15+bed.pace*i)
     },

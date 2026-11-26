@@ -42,8 +42,10 @@ export function mount(host,services){
   try{bookmarks=new Set(JSON.parse(localStorage.getItem(storageKey) || '[]'))}catch{bookmarks=new Set()}
   let index=0,active,competitive=services.blocked(),startY=null,lastSwipe=0
   const clips=[]
+  video.addEventListener('play',()=>services.audioFocus?.startVideo())
+  video.addEventListener('ended',()=>services.audioFocus?.endVideo())
   function theme(){
-    video.volume=settings.phoneVolume
+    video.volume=settings.phoneVideoVolume ?? settings.phoneVolume
     video.muted=settings.phoneMuted
     get('mute').setAttribute('aria-pressed',String(video.muted))
     get('mute').setAttribute('aria-label',video.muted?'Unmute phone':'Mute phone')
@@ -84,7 +86,7 @@ export function mount(host,services){
     const next=possible[index]
     showError(null)
     if(next!==active){
-      video.pause()
+      video.pause();services.audioFocus?.endVideo()
       active=next
       if(active){
         video.src=active.source
@@ -188,6 +190,7 @@ export function mount(host,services){
   return {
     pause:()=>video.pause(),
     destroy(){
+      services.audioFocus?.endVideo()
       services.state.category=get('category').value
       services.state.index=index
       video.pause()

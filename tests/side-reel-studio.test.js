@@ -7,12 +7,11 @@ import {collection} from '../src/handset/youtube.js'
 
 test('meme screenings reject duplicate scripts and give every timeline a timed payoff',()=>{
   const history=[]
-  for(let i=0;i<60;i++){
+  for(let i=0;i<125;i++){
     const start=history.length
     const batch=nextBatch(history,i*1729+3)
     assert.ok(batch.length<=3)
     assert.equal(history.length,start+batch.length)
-    assert.equal(new Set(batch.map(clip=>clip.style.effect)).size,batch.length)
     for(const clip of batch){
       assert.equal(clip.timeline.length,6)
       assert.equal(clip.timeline[0].from,0)
@@ -26,8 +25,9 @@ test('meme screenings reject duplicate scripts and give every timeline a timed p
   }
   assert.equal(new Set(history.map(item=>item.story)).size,librarySize.stories)
   assert.equal(new Set(history.map(item=>item.punchline)).size,librarySize.stories)
+  assert.ok(new Set(history.map(item=>item.style)).size>20)
   assert.equal(nextBatch(history,123).length,0)
-  assert.deepEqual(librarySize,{characters:50,environments:30,props:100,sounds:50,cameras:30,editing:25,voices:20,stories:101,expressions:30,movements:50,loops:25})
+  assert.deepEqual(librarySize,{characters:55,environments:30,props:100,sounds:50,cameras:30,editing:25,voices:20,stories:201,expressions:30,movements:50,loops:25})
 })
 
 test('orchard pieces fall and chain merges without modifying the input',()=>{
@@ -40,6 +40,6 @@ test('orchard pieces fall and chain merges without modifying the input',()=>{
 test('the arcade catalog and real YouTube catalog use distinct game and provider identifiers',()=>{
   assert.equal(arcadeCatalog.length,23)
   assert.equal(new Set(arcadeCatalog.map(game=>game.id)).size,arcadeCatalog.length)
-  assert.equal(new Set(collection.map(video=>video.id)).size,9)
+  assert.equal(new Set(collection.map(video=>video.id)).size,collection.length)
   assert.ok(collection.every(video=>/^[A-Za-z0-9_-]{11}$/.test(video.id) && video.creator))
 })

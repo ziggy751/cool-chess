@@ -1,9 +1,10 @@
 import {icon} from '../icons.js'
 import {node,optionRows,read,store} from './shared.js'
 import originals from './record-catalog.json'
+import {licensed} from './licensed-catalog.js'
 
 const holiday={id:'winter',title:'Winter Bells',genre:'Christmas',artist:'Side Reel Studio',source:'/side-reel/noel.mp3',color:'#613d4c'}
-export const records=[...originals,holiday]
+export const records=[...licensed,...originals,holiday]
 const timeLabel=seconds=>Number.isFinite(seconds)?Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0'):'0:00'
 function button(label,symbol,style='record-control'){
   const result=node('button',style,symbol?'':label)
@@ -87,8 +88,11 @@ export function mount(host,{settings,state,blocked}){
   const image=node('img','record-cover');image.alt=''
   art.append(image,node('span','record-default','♫'))
   const name=node('strong','music-title'),meta=node('p','record-credit')
+  const credit=node('a','handset-link','Track credits');credit.target='_blank';credit.rel='noopener noreferrer'
+  const license=node('a','handset-link','CC BY 4.0');license.target='_blank';license.rel='noopener noreferrer'
+  const credits=node('div','handset-row');credits.append(credit,license);credits.hidden=true
   const status=node('p','handset-note');status.setAttribute('role','status')
-  hero.append(art,name,meta,status)
+  hero.append(art,name,meta,credits,status)
   const seek=node('input','record-seek')
   seek.type='range';seek.min=0;seek.step=.05;seek.value=0;seek.setAttribute('aria-label','Seek track')
   seek.oninput=()=>{if(Number.isFinite(audio.duration))audio.currentTime=Number(seek.value)}
@@ -133,6 +137,8 @@ export function mount(host,{settings,state,blocked}){
     file.disabled=blocked();clear.hidden=!state.imports.length
     const track=state.track,playing=!audio.paused
     name.textContent=track.title;meta.textContent=track.artist+' / '+track.genre
+    credits.hidden=!track.details
+    if(track.details){credit.href=track.details;credit.title=track.credit;license.href=track.license}
     if(track!==currentCover){
       if(track.art)image.src=track.art
       image.hidden=!track.art;art.dataset.cover=String(Boolean(track.art))

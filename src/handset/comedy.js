@@ -1,9 +1,9 @@
 import {gesture,node,optionRows,store,read} from './shared.js'
-import {width,height,clipDuration,makeShort,nextBatch,render,makeAudio,voiceFor,storyCount} from './meme-engine.js'
+import {width,height,clipDuration,makeShort,nextBatch,render,makeAudio,voiceFor,storyCount,categories} from './meme-engine.js'
 
 export {makeShort}
 
-export function mount(host,{settings,state}){
+export function mount(host,{settings,state,audioFocus}){
   const canvas=node('canvas','handset-canvas comedy-canvas')
   canvas.width=width;canvas.height=height;canvas.setAttribute('aria-label','Original animated comedy short')
   const ctx=canvas.getContext('2d')
@@ -12,7 +12,9 @@ export function mount(host,{settings,state}){
   const transcript=node('p','meme-caption')
   transcript.setAttribute('aria-live','polite')
   const filter=node('select');filter.setAttribute('aria-label','Comedy library')
-  filter.innerHTML=optionRows({batch:'Current batch',saved:'Bookmarks'},'batch')
+  filter.innerHTML=optionRows({batch:'Current batch',saved:'Bookmarks',history:'Watched clips'},'batch')
+  const category=node('select');category.setAttribute('aria-label','Brainrot format')
+  category.innerHTML=optionRows({all:'All formats',...categories,classic:'Side Reel Archives'},state.category || 'all')
   const button=(label,primary=false)=>node('button',primary?'handset-primary':'handset-secondary',label)
   const prev=button('Previous short'),toggle=button('Play short',true),next=button('Next short')
   const generate=button('Generate 3 shorts'),bookmark=button('Bookmark short')
@@ -22,11 +24,13 @@ export function mount(host,{settings,state}){
   let saved=read('meme-bookmarks',[]),watched=new Set(read('meme-watched',[]))
   let batch=state.batch || [],index=0,elapsed=0,previous,frame,running=false,lastCue,voiceTimer
   let audio,onSound=read('meme-sound',true),onVoice=read('meme-voice',false),quiet=read('meme-quiet',false)
-  const items=()=>filter.value==='saved'?saved.map(makeShort):batch
+  const items=()=>filter.value==='saved'?saved.map(makeShort):filter.value==='history'?
+    history.filter(clip=>watched.has(clip.id)).slice(-35).reverse().map(clip=>makeShort(clip.seed)):batch
   const current=()=>items()[index]
   function pause(){
     running=false;cancelAnimationFrame(frame);clearTimeout(voiceTimer)
     audio?.stop()
+    audioFocus?.endVideo()
     if(onVoice)window.speechSynthesis?.cancel()
     toggle.textContent=elapsed>=clipDuration?'Replay short':elapsed>0?'Resume short':'Play short'
   }
@@ -53,7 +57,7 @@ export function mount(host,{settings,state}){
     const words=cue.line.split(/\s+/).length
     utterance.pitch=profile.pitch
     utterance.rate=Math.max(profile.rate,Math.min(2.1,words*.37/seconds))
-    utterance.volume=settings.phoneVolume
+    utterance.volume=(settings.phoneVideoVolume ?? settings.phoneVolume)
     const voices=speechSynthesis.getVoices().filter(item=>item.lang.startsWith('en'))
     if(voices.length)utterance.voice=voices[cue.speaker.id%voices.length]
     clearTimeout(voiceTimer);speechSynthesis.cancel()
@@ -69,17 +73,18 @@ export function mount(host,{settings,state}){
       lastCue=cue
       transcript.textContent=cue.speaks?cue.speaker.name+': '+cue.line:cue.line
       speak(cue)
-      if(onSound)audio?.cue(cue.sound,clip.bed,clip.timeline.indexOf(cue))
+      if(onSound)audio?.cue(cue.sound,clip.bed,clip.timeline.indexOf(cue),clip.format)
     }
     progress.value=elapsed
-    if(elapsed>=clipDuration){pause();status.textContent='End of short';return}
+    if(elapsed>=clipDuration){pause();audioFocus?.endVideo();status.textContent='End of short';return}
     frame=requestAnimationFrame(loop)
   }
   function start(){
     const clip=current()
     if(!clip)return
     if(elapsed>=clipDuration)elapsed=0
-    if(onSound){audio ||= makeAudio();audio?.volume(settings.phoneVolume);audio?.resume()}
+    audioFocus?.startVideo()
+    if(onSound){audio ||= makeAudio();audio?.volume((settings.phoneVideoVolume ?? settings.phoneVolume));audio?.resume()}
     watched.add(clip.id);store('meme-watched',[...watched].slice(-250))
     running=true;previous=undefined;lastCue=null
     toggle.textContent='Pause short';status.textContent=''
@@ -92,7 +97,7 @@ export function mount(host,{settings,state}){
   function generateBatch(){
     pause()
     const seed=crypto.getRandomValues(new Uint32Array(1))[0]%1_000_000
-    batch=nextBatch(history,seed)
+    batch=nextBatch(history,seed,3,category.value)
     status.textContent=batch.length?batch.length+' new shorts ready':'You’ve screened this season’s stories. Replay a bookmark or start a new screening.'
     state.batch=batch
     store('meme-history',history)
@@ -101,6 +106,7 @@ export function mount(host,{settings,state}){
   const reset=button('New screening')
   reset.onclick=()=>{history.length=0;generateBatch()}
   generate.onclick=generateBatch
+  category.onchange=()=>{state.category=category.value;generateBatch()}
   toggle.onclick=()=>running?pause():start()
   prev.onclick=()=>choose(index-1);next.onclick=()=>choose(index+1)
   filter.onchange=()=>{pause();index=0;elapsed=0;toggle.textContent='Play short';paint()}
@@ -122,8 +128,8 @@ export function mount(host,{settings,state}){
   const toolbar=node('div','handset-row'),controls=node('div','handset-row'),options=node('details','meme-options')
   toolbar.append(filter,bookmark);controls.append(prev,toggle,next)
   options.append(node('summary','','Playback and screening'),sound,voice,effects,reset)
-  host.append(toolbar,headline,caption,canvas,transcript,progress,controls,generate,status,options)
+  host.append(toolbar,category,headline,caption,canvas,transcript,progress,controls,generate,status,options)
   if(!batch.length && new Set(history.map(clip=>clip.story)).size<storyCount)generateBatch()
   else paint()
-  return {pause,destroy(){pause();audio?.close()}}
+  return {pause,destroy(){pause();audio?.close();audioFocus?.endVideo()}}
 }

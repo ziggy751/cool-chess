@@ -271,3 +271,51 @@ dialog .result-details span{border-radius:4px}
   #home-screen .hero-copy h1{font-size:clamp(48px,13vw,72px)}
   #studio-screen .studio-tabs button{padding-inline:9px}
 }
+
+/* Pocket navigation and the three entertainment surfaces. */
+#match-phone .phone-header {min-height:34px;background:var(--handset-base)}
+#match-phone .phone-status {padding-top:4px}
+#match-phone .handset-content[data-view=home]{background:#202b3c}
+#match-phone[data-wallpaper=snow] .handset-content[data-view=home]{background:#293b49}
+#match-phone[data-wallpaper=ocean] .handset-content[data-view=home]{background:#203d44}
+#match-phone[data-wallpaper=galaxy] .handset-content[data-view=home]{background:#2e2946}
+#match-phone[data-wallpaper=rain] .handset-content[data-view=home]{background:#293748}
+#match-phone[data-wallpaper=mono] .handset-content[data-view=home]{background:#2a2e37}
+#match-phone[data-wallpaper=glass] .handset-content[data-view=home]{background:#3a4f57}
+#match-phone[data-wallpaper=lava] .handset-content[data-view=home]{background:#522c40}
+#match-phone[data-wallpaper=gold] .handset-content[data-view=home]{background:#59443a}
+#match-phone[data-wallpaper=chrome] .handset-content[data-view=home]{background:#3c4c60}
+#match-phone .handset-content[data-view=home]::before{opacity:.18}
+#match-phone .handset-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 2px}
+#match-phone .handset-app{font-size:8.5px;font-weight:625;letter-spacing:0;min-height:59px}
+#match-phone .handset-app .handset-icon{width:36px;height:36px;border-radius:10px}
+#match-phone .handset-app .handset-icon[data-glyph=spotify]{background:#276747;color:#ceefcf}
+#match-phone .handset-app .handset-icon[data-glyph=musiclab]{background:#735aa6;color:#f3e4d1}
+#match-phone .handset-app:focus-visible .handset-icon{outline:2px solid #f7d392;outline-offset:2px}
+#match-phone .handset-content .handset-setting{min-height:36px}
+.yt-swipe{width:100%;padding:6px 3px;color:var(--handset-dim);font-size:10px;touch-action:none;border-bottom:1px solid var(--handset-border)}
+#match-phone .yt-poster{height:min(31vh,254px);border-radius:8px;border-top:3px solid #b72f4a}
+.screening-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
+.screening-video{width:100%;aspect-ratio:9/13;background:#0c0f19;object-fit:contain;max-height:350px;border-radius:5px}
+.screening-title{font:750 17px/1.1 "DM Sans",sans-serif;display:block;margin-block:8px 4px;color:var(--handset-text)}
+.screening-content .handset-link{display:inline-block;margin:2px 5px}
+.screening-content select,.handset-content[data-view=musiclab] select{width:100%;margin:4px 0}
+.screening-list,.lab-library{display:grid;gap:2px}
+.spotify-intro,.lab-header{padding:10px 9px 13px;margin-bottom:6px;border-bottom:1px solid #4a6156;color:var(--handset-text)}
+.spotify-intro span,.lab-header span{font:800 8px monospace;letter-spacing:.15em;color:#b0e0b5}
+.lab-header{border-color:#5d4c73}
+.lab-header span{color:#d7b7ee}
+.spotify-intro h2,.lab-header h2{font:750 22px/.95 "DM Sans",sans-serif;letter-spacing:-.035em;margin:4px 0 0}
+.spotify-launch{display:block;padding:8px 10px;margin:8px 0 12px;background:#a6d9ae;border-radius:5px;color:#153021;text-align:center;font-weight:750;font-size:12px}
+.spotify-form{display:grid;gap:5px}
+.spotify-form input{width:100%;font-size:10px;background:var(--handset-surface);color:var(--handset-text);border:1px solid var(--handset-border);min-height:31px;padding:4px 6px}
+.spotify-entry{display:flex;align-items:center;justify-content:space-between;gap:5px;border-bottom:1px solid var(--handset-border);padding:6px 0}
+.lab-art{width:100%;aspect-ratio:24/17;border-radius:5px;display:block}
+.lab-wave{width:100%;height:23px;display:block}
+.lab-wave[hidden]{display:none}
+.lab-lyrics{font-size:11px;min-height:31px;color:#f1e3c5;margin:6px 0}
+#match-phone[data-mode=light] .lab-lyrics{color:#43334f}
+.handset-content[data-view=musiclab] input[type=range]{width:100%}
+.media-status-item{padding:8px 0;border-bottom:1px solid var(--handset-border);display:grid;gap:3px}
+.media-status-item strong{font-size:12px}
+.media-status-item b{font-size:10px;color:var(--phone-accent)}

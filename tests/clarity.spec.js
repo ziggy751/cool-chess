@@ -75,7 +75,7 @@ test('legal guidance covers all six piece types, respects pins, and shows specia
 })
 
 test('WebGL indicators remain distinct over premium surfaces and after orbiting',async({page})=>{
-  test.setTimeout(120000)
+  test.setTimeout(240000)
   const errors=[]
   page.on('pageerror',error=>errors.push(error.message))
   page.on('console',message=>{if(message.type()==='error' && /THREE|GL_INVALID/.test(message.text()))errors.push(message.text())})

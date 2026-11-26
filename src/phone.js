@@ -2,10 +2,14 @@ import {icon} from './icons.js'
 import {handsetDefaults,wallpapers,frames} from './handset/appearance.js'
 import {node,read,store,optionRows} from './handset/shared.js'
 import {games,newCanvasGames,newPuzzleGames} from './handset/game-catalog.js'
+import {createAudioFocus} from './handset/audio-focus.js'
 
 const apps={
   youtube:['YouTube Shorts','youtube','coral',()=>import('./handset/youtube.js')],
-  comedy:['AI Shorts','sparkles','violet',()=>import('./handset/comedy.js')],
+  comedy:['AI Shorts','sparkles','violet',()=>import('./handset/screening.js')],
+  musiclab:['AI Music Lab','headphones','orchid',()=>import('./handset/music-lab.js')],
+  spotify:['Open Spotify','music','fern',()=>import('./handset/spotify.js')],
+  mediaStatus:['Media sources','circle-help','slate',()=>import('./handset/media-status.js')],
   arcade:['Arcade','gamepad-2','blue',()=>import('./handset/arcade-hub.js')],
   wings:['Flappy Wings','feather','aqua',()=>import('./handset/arcade.js')],
   snake:['Snake','route','fern',()=>import('./handset/arcade.js')],
@@ -29,17 +33,20 @@ const settingsFields=[
   ['phoneIcons','App icons',{colour:'Colour',mono:'Monochrome'}],['phoneBrightness','Brightness',[.48,1,.02]],
   ['phoneSize','Size',{compact:'Compact',regular:'Regular',large:'Large'}],['phoneSide','Screen side',{right:'Right',left:'Left'}],
   ['phoneMotion','Animation speed',{quick:'Quick',normal:'Normal',relaxed:'Relaxed'}],
-  ['phoneVolume','Media volume',[0,1,.05]],['phoneMuted','Mute native video',true],['phoneLock','Lock when reopened',true],
+  ['phoneVideoVolume','Video audio',[0,1,.05]],['phoneLabVolume','AI Music Lab volume',[0,1,.05]],
+  ['phoneArcadeVolume','Minigame audio',[0,1,.05]],['phoneInterfaceVolume','Interface audio',[0,1,.05]],
+  ['phoneDuckMusic','Pause music during video',true],['phoneMuted','Mute native video',true],['phoneLock','Lock when reopened',true],
   ['phoneAutopause','Pause video on your turn',true],['phoneGamePause','Pause games on your turn',true],['phoneArcadeSound','Arcade sound effects',true],
   ['phoneMusicContinue','Music plays across apps',true],['phoneMusicMinimized','Music while phone is closed',true],['phoneNotices','Turn chime',true],
   ['phoneReduced','Reduce motion',true],['phoneShortcut','P shortcut',true],
 ]
 const clock=new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',hour12:false})
 const date=new Intl.DateTimeFormat(undefined,{weekday:'long',month:'short',day:'numeric'})
-const limited=new Set(['chess','youtube'])
+const limited=new Set(['chess','youtube','spotify'])
 const gameApps=new Set(Object.keys(games))
 
 export function createPhone(host,settings,save){
+  settings.phoneVideoVolume??=read('youtube-volume',settings.phoneVolume*100)/100
   for(const [key,value] of Object.entries(handsetDefaults))settings[key]??=value
   const layout=host.closest('.game-layout')
   const launcher=document.getElementById('phone-toggle')
@@ -79,6 +86,7 @@ export function createPhone(host,settings,save){
   const dock=read('app-dock',['arcade','music','settings']).filter(id=>apps[id]).slice(0,4)
   let folderIndex=-1
   const musicState={imports:[]}
+  const audioFocus=createAudioFocus(settings,musicState)
   let miniAudio
   const defaultDock=['arcade','music','settings']
   const showIcon=id=>{
@@ -132,9 +140,9 @@ export function createPhone(host,settings,save){
     app=null
   }
   function chime(){
-    if(!settings.phoneNotices || !settings.phoneVolume)return
+    if(!settings.phoneNotices || !settings.phoneInterfaceVolume)return
     const audio=new Audio('/side-reel/tap.mp3')
-    audio.volume=settings.phoneVolume*.28
+    audio.volume=settings.phoneInterfaceVolume*.28
     audio.play().catch(()=>{})
   }
   function drawHome(){
@@ -155,7 +163,7 @@ export function createPhone(host,settings,save){
     const grid=node('div','handset-grid')
     const assigned=new Set(folders.flatMap(entry=>entry.apps))
     const shown=folder?folder.apps.filter(id=>apps[id]):
-      order.filter(id=>(!newGames.has(id) || shortcuts.has(id)) && !assigned.has(id))
+      order.filter(id=>id!=='mediaStatus' && (!newGames.has(id) || shortcuts.has(id)) && !assigned.has(id))
     for(const id of shown){
       const label=apps[id][0]
       const cell=node('div','handset-cell'),button=node('button','handset-app')
@@ -227,7 +235,7 @@ export function createPhone(host,settings,save){
       const field=node('select');field.setAttribute('aria-label','Dock slot')
       field.innerHTML=optionRows({0:'First dock slot',1:'Second dock slot',2:'Third dock slot'},'0')
       const choice=node('select');choice.setAttribute('aria-label','Dock app')
-      choice.innerHTML=optionRows(Object.fromEntries(order.filter(id=>!newGames.has(id) || shortcuts.has(id)).map(id=>[id,apps[id][0]])),dock[0])
+      choice.innerHTML=optionRows(Object.fromEntries(order.filter(id=>id!=='mediaStatus' && (!newGames.has(id) || shortcuts.has(id))).map(id=>[id,apps[id][0]])),dock[0])
       field.onchange=()=>{choice.value=dock[field.value] || defaultDock[field.value]}
       choice.onchange=()=>{
         const existing=dock.indexOf(choice.value),slot=Number(field.value)
@@ -279,6 +287,9 @@ export function createPhone(host,settings,save){
     }
   }
   function drawSettings(){
+    const media=node('button','handset-secondary','Media sources')
+    media.onclick=()=>open('mediaStatus')
+    body.append(media)
     for(const [key,label,choices] of settingsFields){
       const row=node('label','handset-setting')
       row.append(node('span','',label))
@@ -293,6 +304,7 @@ export function createPhone(host,settings,save){
         settings[key]=field.type==='checkbox'?field.checked:field.type==='range'?Number(field.value):field.value
         appearance()
         if(key==='phoneMusicContinue' && !settings[key])musicState.audio?.pause()
+        if(key==='phoneDuckMusic' && !settings[key])audioFocus.endVideo()
         save()
       }
       row.append(field);body.append(row)
@@ -332,7 +344,7 @@ export function createPhone(host,settings,save){
       body.replaceChildren()
       const state=id==='music'?musicState:appStates.get(id) || {}
       appStates.set(id,state)
-      app=module.mount(body,{id,settings,save,blocked:()=>blocked,state,open,shortcuts})
+      app=module.mount(body,{id,settings,save,blocked:()=>blocked,state,open,shortcuts,audioFocus})
       refreshMini()
       body.focus({preventScroll:true})
     }catch{
@@ -341,6 +353,7 @@ export function createPhone(host,settings,save){
     }
   }
   function pause(){
+    if(!settings.phoneMusicMinimized)audioFocus.endVideo(false)
     if(active!=='music' || !settings.phoneMusicMinimized)app?.pause?.()
     if(!settings.phoneMusicMinimized)musicState.audio?.pause()
   }
@@ -414,7 +427,7 @@ export function createPhone(host,settings,save){
         noticeButton.dataset.unread=String(active!=='notifications')
         if(active==='notifications')drawNotifications()
         if(settings.phoneGamePause && gameApps.has(active))app?.pause?.()
-        if(settings.phoneAutopause && ['youtube','comedy','clips'].includes(active))app?.pause?.()
+        if(settings.phoneAutopause && ['youtube','comedy','clips','musiclab'].includes(active))app?.pause?.()
         chime()
       }
       turnWasActive=update.ownTurn

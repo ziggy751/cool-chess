@@ -9,6 +9,6 @@ export const frames={
 }
 export const handsetDefaults={
   phoneFrame:'standard',phoneWallpaper:'aurora',phoneMode:'dark',phoneIcons:'colour',phoneBrightness:.92,
-  phoneLock:false,phoneMotion:'normal',phoneReduced:false,phoneGamePause:true,phoneArcadeSound:false,phoneNotices:false,
+  phoneVideoVolume:.45,phoneLabVolume:.59,phoneArcadeVolume:.45,phoneInterfaceVolume:.45,phoneDuckMusic:true,phoneLock:false,phoneMotion:'normal',phoneReduced:false,phoneGamePause:true,phoneArcadeSound:false,phoneNotices:false,
   phoneMusicContinue:true,phoneMusicMinimized:false,
 }

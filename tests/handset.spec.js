@@ -22,7 +22,7 @@ test('home, separate media apps, music, settings, recent apps and lock work',asy
   await page.route('https://www.youtube.com/iframe_api',route=>route.abort())
   await page.goto('/?view=match')
   await page.getByRole('button',{name:'Open Side Reel phone',exact:true}).click()
-  await expect(phone(page).locator('.handset-app')).toHaveCount(14)
+  await expect(phone(page).locator('.handset-app')).toHaveCount(16)
   await open(page,'youtube')
   await expect(phone(page).locator('.phone-header strong')).toHaveText('YouTube Shorts')
   await phone(page).getByLabel('YouTube URL').fill('https://www.youtube.com/shorts/-eNe1OmbbXc')
