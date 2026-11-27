@@ -59,8 +59,8 @@ test('ranked AI survives reload and records a resignation only once',async({page
   await page.goto('/')
   await button(page,'Play chess').click()
   await button(page,'Ranked AI').click()
-  await expect(page.getByText('400 Elo',{exact:true})).toBeVisible()
-  await button(page,'Find match · 10 minutes').click()
+  await expect(page.locator('#current-ai-elo')).toHaveText('0 Elo')
+  await button(page,'Play Ranked AI').click()
   await expect(page.locator('#match-type')).toHaveText('Ranked AI')
   await expect(button(page,'New game')).toBeDisabled()
   await page.reload()
@@ -69,7 +69,9 @@ test('ranked AI survives reload and records a resignation only once',async({page
   await button(page,'Confirm resignation').click()
   await expect(page.getByRole('heading',{name:'Defeat'})).toBeVisible()
   const ladder=await page.evaluate(()=>JSON.parse(localStorage.getItem('evolution-ai-ladder')))
-  expect(ladder.rating).toBeLessThan(400)
+  expect(ladder.rating).toBe(0)
+  expect(ladder.losses).toBe(1)
+  expect(ladder.history[0].opponent).toBeLessThanOrEqual(50)
   expect(ladder.played).toBe(1)
   expect(ladder.active).toBeNull()
   await page.reload()
@@ -97,4 +99,119 @@ test('training and custom clock are available from the redesigned menu',async({p
   await button(page,'Play chess').click()
   await button(page,'Resume saved game').click()
   await expect(page.locator('[data-square=e4]')).toHaveAttribute('aria-label','e4 white Pawn')
+})
+
+test('ranked checkmate awards Elo and promotes a new player',async({page})=>{
+  await page.addInitScript(()=>{
+    localStorage.setItem('evolution-settings',JSON.stringify({reduced:true,quality:'low',camera:'flat'}))
+    if(localStorage.getItem('evolution-ai-ladder'))return
+    const moves=[['e2','e4'],['e7','e5'],['f1','c4'],['b8','c6'],['d1','h5'],['g8','f6']]
+    const now=Date.now()
+    localStorage.setItem('evolution-ai-ladder',JSON.stringify({version:2,rating:0,active:{id:'scholar',rating:0,game:{
+      initial:'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',variant:'standard',minutes:5,increment:0,
+      started:now,began:now-5000,clocks:{w:300000,b:300000},moves:moves.map(([from,to])=>({from,to})),
+    }}}))
+  })
+  await page.goto('/')
+  await expect(page.locator('#match-type')).toHaveText('Ranked AI')
+  await move(page,'h5','f7')
+  await expect(page.getByRole('heading',{name:'Victory'})).toBeVisible()
+  await expect(page.getByText('Promoted to Iron')).toBeVisible()
+  await expect(page.getByText('+32 Elo',{exact:true})).toBeVisible()
+  await expect(page.locator('#result-reason')).toContainText('Checkmate')
+  await button(page,'Review game').click()
+  await expect(page.locator('#review-screen')).toBeVisible()
+  await page.reload()
+  const ladder=await page.evaluate(()=>JSON.parse(localStorage.getItem('evolution-ai-ladder')))
+  expect(ladder).toMatchObject({rating:32,best:32,played:1,wins:1,active:null})
+})
+
+test('ranked draw by repetition persists and a resignation can demote',async({page})=>{
+  await page.addInitScript(()=>{
+    localStorage.setItem('evolution-settings',JSON.stringify({reduced:true,quality:'low',camera:'flat'}))
+    if(localStorage.getItem('evolution-ai-ladder'))return
+    const moves=[['g1','f3'],['g8','f6'],['f3','g1'],['f6','g8']]
+    const now=Date.now()
+    localStorage.setItem('evolution-ai-ladder',JSON.stringify({version:2,rating:200,best:200,active:{id:'repetition',rating:200,game:{
+      initial:'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',variant:'standard',minutes:5,increment:0,
+      started:now,began:now-5000,clocks:{w:300000,b:300000},moves:[...moves,...moves].map(([from,to])=>({from,to})),
+    }}}))
+  })
+  await page.goto('/')
+  await expect(page.locator('#match-type')).toHaveText('Ranked AI')
+  await button(page,'Game info').click()
+  await expect(button(page,'Hint')).toHaveCount(0)
+  await expect(button(page,'Undo last turn')).toHaveCount(0)
+  await button(page,'Claim draw').click()
+  await expect(page.getByRole('heading',{name:'Draw'})).toBeVisible()
+  await expect(page.locator('#result-reason')).toHaveText('Threefold repetition')
+  await button(page,'Next ranked match').click()
+  await expect(page.locator('#current-ai-elo')).toHaveText('200 Elo')
+  await button(page,'Play Ranked AI').click()
+  await button(page,'Resign').click()
+  await button(page,'Confirm resignation').click()
+  await expect(page.getByText('Moved to Iron')).toBeVisible()
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('evolution-ai-ladder')))).toMatchObject({
+    played:2,wins:0,losses:1,draws:1,best:200,
+  })
+})
+
+test('ranked legacy progress stays until the one-time reset is confirmed',async({page})=>{
+  await page.addInitScript(()=>{
+    if(!localStorage.getItem('evolution-ai-ladder'))
+      localStorage.setItem('evolution-ai-ladder',JSON.stringify({rating:743,best:982,played:36}))
+  })
+  await page.goto('/')
+  await button(page,'Play chess').click()
+  await button(page,'Ranked AI').click()
+  await expect(page.locator('#current-ai-elo')).toHaveText('743 Elo')
+  await button(page,'Reset legacy progress').click()
+  await button(page,'Cancel').click()
+  await expect(page.locator('#current-ai-elo')).toHaveText('743 Elo')
+  await button(page,'Reset legacy progress').click()
+  await button(page,'Reset Ranked AI').click()
+  await expect(page.locator('#current-ai-elo')).toHaveText('0 Elo')
+  await expect(button(page,'Reset legacy progress')).toHaveCount(0)
+})
+
+test('ranked match pauses on an opponent worker failure and retries without rating the game',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('evolution-settings',JSON.stringify({reduced:true,quality:'low',camera:'flat'})))
+  const path='**/src/beginner-worker.js*'
+  await page.route(path,route=>route.fulfill({contentType:'text/javascript',body:'throw new Error("Simulated worker failure")'}))
+  await page.goto('/')
+  await button(page,'Play chess').click()
+  await button(page,'Ranked AI').click()
+  await button(page,'Play Ranked AI').click()
+  await move(page,'e2','e4')
+  await expect(page.locator('#status')).toContainText('Clock paused')
+  await expect(button(page,'Retry opponent')).toBeVisible()
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('evolution-ai-ladder')).played)).toBe(0)
+  await page.unroute(path)
+  await button(page,'Retry opponent').click()
+  await expect(page.locator('#status')).toContainText('White to move')
+  await expect(page.locator('.move-row').first()).toBeVisible()
+})
+
+test('casual AI settings pick and play against Elo 0 and Elo 2800',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('evolution-settings',JSON.stringify({reduced:true,quality:'low',camera:'flat'})))
+  await page.goto('/')
+  await button(page,'Play vs AI').click()
+  await button(page,'Recommended difficulty').click()
+  await expect(page.getByLabel('Opponent Elo')).toHaveValue('0')
+  await button(page,'Favourite opponent').click()
+  await page.getByLabel('Difficulty category').selectOption('favourites')
+  await expect(page.getByLabel('Difficulty',{exact:true})).toHaveValue('0')
+  await button(page,'Start game').click()
+  await move(page,'e2','e4')
+  await expect(page.locator('#status')).toContainText('White to move')
+  await expect(page.locator('.move-row').first()).toBeVisible()
+  await button(page,'New game').click()
+  await button(page,'Casual AI').click()
+  await page.getByLabel('Opponent Elo').fill('2800')
+  await page.getByLabel('Opponent Elo').press('Tab')
+  await expect(page.getByLabel('Difficulty',{exact:true})).toHaveValue('2800')
+  await button(page,'Start game').click()
+  await move(page,'d2','d4')
+  await expect(page.locator('#status')).toContainText('White to move',{timeout:15000})
+  await expect(page.locator('#opponent')).toContainText('2800 Elo')
 })

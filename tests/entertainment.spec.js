@@ -78,40 +78,135 @@ test('AI Music Lab composes and plays a saved song and Spotify links open separa
   expect(failures).toEqual([])
 })
 
-test('Shorts opens the official feed in a separate tab and preserves chess input',async({page,context})=>{
-  const shorts='https://www.youtube.com/shorts'
-  const requests=[]
-  await context.route(/https:\/\/(?:[^/]+\.)?youtube(?:-nocookie)?\.com\//,async route=>{
-    requests.push(route.request().url())
-    await route.fulfill({contentType:'text/html',body:'<title>Navigation test fixture</title>'})
-  })
+const api='https://www.youtube.com/iframe_api'
+const playerFixture=`
+  window.shortsCalls = []
+  window.YT = {
+    PlayerState:{PLAYING:1,PAUSED:2,ENDED:0},
+    Player:class {
+      constructor(target,options){
+        this.id=options.videoId
+        this.options=options
+        this.frame=document.createElement('iframe')
+        target.replaceWith(this.frame)
+        this.log('mount')
+        setTimeout(()=>{
+          if(!this.frame.isConnected)return
+          if(window.skipShort){
+            window.skipShort=false
+            options.events.onError({target:this,data:150})
+          }else{
+            options.events.onReady({target:this})
+          }
+        },30)
+      }
+      log(name,value){window.shortsCalls.push({name,id:this.id,value})}
+      getIframe(){return this.frame}
+      mute(){this.muted=true;this.log('mute')}
+      unMute(){this.muted=false;this.log('unmute')}
+      isMuted(){return this.muted}
+      setVolume(value){this.log('volume',value)}
+      getDuration(){return 90}
+      getCurrentTime(){return 12}
+      cueVideoById(info){this.log('cue',info.startSeconds)}
+      playVideo(){this.log('play',this.muted);this.options.events.onStateChange({target:this,data:1})}
+      pauseVideo(){this.log('pause');this.options.events.onStateChange({target:this,data:2})}
+      destroy(){this.log('destroy');this.frame.remove()}
+    }
+  }
+  window.onYouTubeIframeAPIReady()
+`
+const call=(page,name)=>page.evaluate(name=>window.shortsCalls?.filter(call=>call.name===name) || [],name)
+
+test('Shorts pages with wheel, keyboard and drag, cleans up players and resumes the same Short',async({page,context})=>{
+  await context.route(api,route=>route.fulfill({contentType:'text/javascript',body:playerFixture}))
   await match(page)
   await open(page,'youtube')
-  const link=phone(page).getByRole('link',{name:'Open Shorts on YouTube'})
-  await expect(link).toHaveAttribute('href',shorts)
-  await expect(phone(page).locator('iframe,video,canvas')).toHaveCount(0)
-  expect(requests).toEqual([])
-  const [destination]=await Promise.all([page.waitForEvent('popup'),link.press('Enter')])
-  await destination.waitForURL(shorts)
-  expect(requests).toEqual([shorts])
-  expect(await destination.evaluate(()=>window.opener===null)).toBe(true)
-  await destination.close()
+  const feed=phone(page).getByRole('region',{name:'YouTube Shorts feed'})
+  const caption=feed.locator('.shorts-caption')
+  const player=feed.locator('iframe')
+  const source=feed.getByRole('link',{name:'Open on YouTube'})
+  await feed.scrollIntoViewIfNeeded()
+  await expect.poll(async()=> (await call(page,'play')).length).toBeGreaterThan(0)
+  expect((await call(page,'play'))[0].value).toBe(true)
+  await expect(player).toHaveCount(1)
+  const first=await source.getAttribute('href')
+  await caption.hover()
+  await page.mouse.wheel(0,180)
+  await expect(source).not.toHaveAttribute('href',first)
+  await expect.poll(async()=> (await call(page,'destroy')).length).toBe(1)
+  await feed.getByRole('button',{name:'Next Short'}).press('ArrowUp')
+  await expect(source).toHaveAttribute('href',first)
+  const rail=await feed.locator('.shorts-rail').boundingBox()
+  await page.mouse.move(rail.x+rail.width/2,rail.y+85)
+  await page.mouse.down()
+  await page.mouse.move(rail.x+rail.width/2,rail.y+25,{steps:5})
+  await page.mouse.up()
+  await expect(source).not.toHaveAttribute('href',first)
+  const resumed=await source.getAttribute('href')
+  await expect(player).toHaveCount(1)
+  await feed.getByRole('button',{name:'Unmute Short'}).click()
+  expect((await call(page,'unmute')).length).toBe(1)
+  await button(page,'Minimize phone').click()
+  await expect(player).toHaveCount(0)
+  expect((await call(page,'pause')).at(-1)?.id).toBe(resumed.split('/').at(-1))
+  expect((await call(page,'destroy')).at(-1)?.id).toBe(resumed.split('/').at(-1))
+  await page.getByRole('button',{name:'Open Side Reel phone',exact:true}).click()
+  await expect(source).toHaveAttribute('href',resumed)
+  await expect.poll(async()=> (await call(page,'cue')).at(-1)?.value).toBe(12)
+  await expect(player).toHaveCount(1)
   await page.locator('#grid [data-square=e2]').click()
   await page.locator('#grid [data-square=e4]').click()
   await expect(page.locator('#grid [data-square=e4]')).toHaveAttribute('aria-label','e4 white Pawn')
 })
 
-test('Shorts provides a retry when the device goes offline',async({page,context})=>{
+test('Shorts skips an embedding error and shows offline retry',async({page,context})=>{
+  await page.addInitScript(()=>{window.skipShort=true})
+  await context.route(api,route=>route.fulfill({contentType:'text/javascript',body:playerFixture}))
   await match(page)
   await open(page,'youtube')
-  const link=phone(page).getByRole('link')
-  await expect(link).toHaveText('Open Shorts on YouTube')
+  const feed=phone(page).getByRole('region',{name:'YouTube Shorts feed'})
+  await expect.poll(async()=> (await call(page,'mount')).length).toBe(2)
+  const [first,second]=await call(page,'mount')
+  expect(first.id).not.toBe(second.id)
+  await expect(feed.locator('iframe')).toHaveCount(1)
   await context.setOffline(true)
-  await expect(phone(page).getByRole('status')).toContainText('You’re offline')
-  await expect(link).toHaveText('Retry opening YouTube')
-  await link.click()
-  expect(context.pages()).toHaveLength(1)
+  await expect(feed.getByRole('status')).toContainText('You’re offline')
+  await expect(feed.locator('iframe')).toHaveCount(0)
   await context.setOffline(false)
-  await expect(link).toHaveText('Open Shorts on YouTube')
-  await expect(phone(page).getByRole('status')).toBeEmpty()
+  await feed.getByRole('button',{name:'Retry',exact:true}).click()
+  await expect.poll(async()=> (await call(page,'mount')).length).toBe(3)
+  await expect(feed.locator('iframe')).toHaveCount(1)
+})
+
+test('Shorts shows a retry if the IFrame API cannot load',async({page,context})=>{
+  await context.route(api,route=>route.abort())
+  await match(page)
+  await open(page,'youtube')
+  const feed=phone(page).getByRole('region',{name:'YouTube Shorts feed'})
+  await expect(feed.getByRole('button',{name:'Retry',exact:true})).toBeVisible()
+  await expect(feed.getByRole('link',{name:'Open on YouTube'})).toHaveAttribute('href',/^https:\/\/www.youtube.com\/shorts\//)
+  await expect(feed.locator('iframe')).toHaveCount(0)
+})
+
+test('Shorts advances from a touch swipe on the mobile grip',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:2})
+  try{
+    await context.route(api,route=>route.fulfill({contentType:'text/javascript',body:playerFixture}))
+    const page=await context.newPage()
+    await match(page)
+    await open(page,'youtube')
+    const grip=phone(page).locator('.shorts-rail')
+    await grip.scrollIntoViewIfNeeded()
+    const link=phone(page).getByRole('link',{name:'Open on YouTube'})
+    const first=await link.getAttribute('href')
+    const {x,y,width,height}=await grip.boundingBox()
+    const session=await context.newCDPSession(page)
+    const point={x:Math.round(x+width/2),y:Math.round(y+height/2)}
+    await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]})
+    await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y-55}]})
+    await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
+    await expect(link).not.toHaveAttribute('href',first)
+    await expect(phone(page).locator('iframe')).toHaveCount(1)
+  }finally{await context.close()}
 })

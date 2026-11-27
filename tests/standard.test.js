@@ -3,7 +3,9 @@ import { test } from 'node:test'
 import { Chess } from 'chess.js'
 import { Match } from '../src/rules.js'
 import { beginnerMove } from '../src/beginner.js'
-import { freshLadder, ratedOpponent, rankOf, rateAI } from '../src/ranked-ai.js'
+import { freshLadder, kFactor, loadLadder, ratedOpponent, rankOf, rateAI, resetLadder } from '../src/ranked-ai.js'
+import { botProfile, botRatings } from '../src/bot-profiles.js'
+import { weakBotMove } from '../src/bot-moves.js'
 
 test('standard and Kiwipete perft counts match known legal move totals',()=>{
   const chess=new Chess()
@@ -61,19 +63,73 @@ test('custom clocks add increment only to the mover and survive serialization',(
   assert.throws(()=>new Match({minutes:0,increment:3}))
 })
 
-test('ranked AI uses Elo, matches nearby levels and settles a result only once',()=>{
-  const start={...freshLadder(),active:{id:'test',level:5}}
+test('ranked AI uses Elo, respects the zero floor and settles one result per match',()=>{
+  const start={...freshLadder(),active:{id:'test',rating:0}}
+  assert.equal(start.rating,0)
   const after=rateAI(start,'test',{winner:'w',reason:'Checkmate'},100)
-  assert.equal(after.rating,426)
+  assert.equal(after.rating,32)
   assert.equal(after.streak,1)
   assert.equal(after.longest,1)
-  assert.equal(after.history[0].delta,26)
+  assert.equal(after.history[0].delta,32)
   assert.equal(rateAI(after,'test',{winner:'w',reason:'Checkmate'}),null)
-  for (const points of [100,400,1100,2100,3000]){
-    assert.ok(Math.abs(ratedOpponent(points,()=>.91)*100-points)<=100)
+  assert.equal(rateAI({...after,active:start.active},'test',{winner:'w',reason:'Checkmate'}),null)
+  const loss=rateAI(start,'test',{winner:'b',reason:'Resignation'})
+  assert.equal(loss.rating,0)
+  assert.equal(loss.losses,1)
+  const draw=rateAI({...start,active:{id:'test',rating:50}},'test',{winner:null,reason:'Stalemate'})
+  assert.equal(draw.rating,5)
+  assert.equal(draw.draws,1)
+
+  const rate=(rating,opponent,winner)=>rateAI({...freshLadder(),rating,active:{id:'test',rating:opponent}},'test',
+    {winner,reason:'Checkmate'}).history[0].delta
+  assert.ok(rate(400,500,'w')>rate(400,300,'w'))
+  assert.ok(rate(400,300,'b')<rate(400,500,'b'))
+  assert.ok(rate(3000,3000,'w')>0)
+  assert.deepEqual([kFactor(2200,19),kFactor(800,20),kFactor(1400,100),kFactor(2000,100),kFactor(2001,20)],[64,40,32,32,24])
+})
+
+test('ranked matchmaking stays within the target band and supports rank migration and reset',()=>{
+  for(const [elo,low,high] of [[0,0,50],[100,50,150],[300,200,400],[500,400,600],[1000,900,1100],
+    [1500,1400,1600],[2000,1900,2100],[2500,2400,2600],[3800,2900,3000]]){
+    assert.equal(ratedOpponent(elo,()=>0),low)
+    assert.equal(ratedOpponent(elo,()=>.9999),high)
   }
-  assert.equal(rankOf(1799).name,'Diamond')
-  assert.equal(rankOf(1800).name,'Master')
+  assert.equal(rankOf(0).name,'Unranked')
+  assert.equal(rankOf(1).name,'Iron')
+  assert.equal(rankOf(199).name,'Iron')
+  assert.equal(rankOf(200).name,'Bronze I')
+  assert.equal(rankOf(1699).name,'Diamond III')
+  assert.equal(rankOf(1700).name,'Master')
+  assert.equal(rankOf(1900).name,'Grandmaster')
+  assert.equal(rankOf(3000).name,'Ultimate')
+  const old=loadLadder({rating:743,best:982,played:36,active:{id:'existing',level:8,game:{moves:[]}}})
+  assert.equal(old.rating,743)
+  assert.equal(old.best,982)
+  assert.equal(old.active.rating,800)
+  assert.equal(resetLadder(old),null)
+  const reset=resetLadder({...old,active:null})
+  assert.equal(reset.rating,0)
+  assert.equal(reset.resetAvailable,false)
+  assert.equal(resetLadder(reset),null)
+})
+
+test('all 100 rated bot presets are distinct, and weak profiles use legal UCI moves',()=>{
+  assert.equal(new Set(botRatings).size,100)
+  assert.equal(botRatings[0],0)
+  assert.equal(botRatings.at(-1),3000)
+  assert.equal(botProfile('max').nodes,undefined)
+  assert.equal(botProfile('max').depth,undefined)
+  assert.ok(botProfile(3000).nodes>botProfile(2400).nodes)
+  assert.notEqual(botProfile(600,1).awareness,botProfile(600,2).awareness)
+  const positions=['7k/P7/8/8/8/8/8/7K w - - 0 1','r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1',
+    '4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1']
+  for(const fen of positions){
+    const legal=new Chess(fen).moves({verbose:true}).map(move=>move.lan)
+    for(const elo of botRatings.filter(rating=>rating<1050)){
+      assert.ok(legal.includes(weakBotMove(fen,botProfile(elo))))
+    }
+  }
+  assert.equal(weakBotMove('7k/6Q1/6K1/8/8/8/8/8 b - - 0 1',botProfile(0)),null)
 })
 
 test('beginner move selection stays legal through promotion and terminal positions',()=>{

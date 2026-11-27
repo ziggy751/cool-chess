@@ -1,4 +1,5 @@
 import { Chess } from 'chess.js'
+import { chooseFishMove, fishOptions, fishLimits } from './bot-moves.js'
 
 export class Engine {
   constructor() {
@@ -43,23 +44,32 @@ export class Engine {
     this.worker.postMessage('uci')
   }
 
+  async weakMove(data,time) {
+    const minimum=performance.now()+Math.min(time,2000)
+    const worker=this.beginner ||= new Worker(new URL('./beginner-worker.js',import.meta.url),{type:'module'})
+    const move=await new Promise((resolve,reject)=>{
+      this.weakResolve=resolve
+      worker.onmessage=({data})=>{
+        this.weakResolve=null
+        if(data.error)reject(new Error(data.error))
+        else resolve(data.move)
+      }
+      worker.onerror=event=>reject(new Error(event.message || 'Beginner engine failed'))
+      worker.postMessage(data)
+    })
+    if(performance.now()<minimum)await new Promise(resolve=>setTimeout(resolve,minimum-performance.now()))
+    return this.closed?null:move
+  }
+
+  async profileMove(fen,profile,time) {
+    if(profile.beginner)return this.weakMove({fen,profile},time ?? Math.max(65,230-profile.abilities.time*4))
+    const budget=time ?? profile.searchTime
+    const result=await this.search(fen,30,budget,profile.lines,{profile})
+    return chooseFishMove(fen,result,profile)
+  }
+
   async move(fen, level, time, style) {
-    if (level<=10) {
-      const minimum=performance.now()+Math.min(time,2000)
-      const worker=this.beginner ||= new Worker(new URL('./beginner-worker.js',import.meta.url),{type:'module'})
-      const move=await new Promise((resolve,reject)=>{
-        this.weakResolve=resolve
-        worker.onmessage=({data})=>{
-          this.weakResolve=null
-          if(data.error)reject(new Error(data.error))
-          else resolve(data.move)
-        }
-        worker.onerror=event=>reject(new Error(event.message || 'Beginner engine failed'))
-        worker.postMessage({fen,level,style})
-      })
-      if(performance.now()<minimum) await new Promise(resolve=>setTimeout(resolve,minimum-performance.now()))
-      return this.closed?null:move
-    }
+    if (level<=10) return this.weakMove({fen,level,style},time)
     const expressive = level>9 && level<28 && style!==undefined && ![7,9].includes(style)
     const result = await this.search(fen,level,Math.max(28,time),expressive?3:1)
     if (!expressive || result?.score?.type!=='cp') return result?.move
@@ -79,22 +89,25 @@ export class Engine {
     return choice
   }
 
-  async search(fen,level,time,lines = 1,{depth,rootMove}={}) {
+  async search(fen,level,time,lines = 1,{depth,rootMove,profile}={}) {
     if(this.closed)return null
     this.start()
     await this.ready
     if (this.closed) return null
     if (this.pending) throw new Error('Stockfish is already searching')
     const skill = Math.round((level - 1) * 20 / 29)
-    this.worker.postMessage('setoption name Skill Level value ' + skill)
-    this.worker.postMessage('setoption name UCI_LimitStrength value ' + (level >= 10 && level < 28))
-    this.worker.postMessage('setoption name UCI_Elo value ' + Math.max(1320,Math.min(2900,level*100)))
-    this.worker.postMessage('setoption name MultiPV value ' + lines)
+    const options=profile?fishOptions(profile):[
+      'setoption name Skill Level value '+skill,
+      'setoption name UCI_LimitStrength value '+(level>=10 && level<28),
+      'setoption name UCI_Elo value '+Math.max(1320,Math.min(2900,level*100)),
+      'setoption name MultiPV value '+lines,
+    ]
+    for(const option of options)this.worker.postMessage(option)
     this.worker.postMessage('position fen ' + fen)
     return new Promise((resolve, reject) => {
       this.pending = { resolve, reject, lines:new Map() }
-      this.worker.postMessage('go movetime '+time+(depth?' depth '+depth:'')+
-        (rootMove?' searchmoves '+rootMove:''))
+      const limits=profile?fishLimits(profile,time):'movetime '+time+(depth?' depth '+depth:'')
+      this.worker.postMessage('go '+limits+(rootMove?' searchmoves '+rootMove:''))
     })
   }
 

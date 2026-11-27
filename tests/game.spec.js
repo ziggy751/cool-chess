@@ -57,7 +57,7 @@ test('3D match, 2D input, replay, and persistent customization',async ({page}) =
   expect(errors).toEqual([])
 })
 
-test('Stockfish responds in a game and returns legal moves at all thirty levels',async ({page}) => {
+test('the browser engines return legal moves at all 100 rated presets and maximum',async ({page}) => {
   await page.goto('/')
   await page.getByRole('button',{name:'Play vs AI'}).click()
   await page.getByLabel('Thinking time').selectOption('150')
@@ -68,13 +68,14 @@ test('Stockfish responds in a game and returns legal moves at all thirty levels'
   const responses = await page.evaluate(async () => {
     const {Engine} = await import('/src/engine.js')
     const {Match} = await import('/src/rules.js')
+    const {botRatings,botProfile} = await import('/src/bot-profiles.js')
     const engine = new Engine()
     const starting = new Match({minutes:0}).chess
     starting.move('e4')
     const fen = starting.fen()
     const moves = []
-    for (let level = 1; level <= 30; level++) {
-      const move = await engine.move(fen,level,90)
+    for (const rating of [...botRatings,'max']) {
+      const move = await engine.profileMove(fen,botProfile(rating),90)
       const trial = new Match({fen,minutes:0}).chess
       trial.move({from:move.slice(0,2),to:move.slice(2,4),promotion:move[4]})
       moves.push(move)
@@ -82,7 +83,7 @@ test('Stockfish responds in a game and returns legal moves at all thirty levels'
     engine.close()
     return moves
   })
-  expect(responses).toHaveLength(30)
+  expect(responses).toHaveLength(101)
 })
 
 test('private rooms sync moves, survive reload, and support draw and rematch',async ({browser}) => {

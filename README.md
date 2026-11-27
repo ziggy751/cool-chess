@@ -17,7 +17,7 @@ npm run dev
 
 Open http://localhost:5173. Vite serves the client and forwards WebSocket connections to the game server on port 8787.
 
-Select **New game** for local rules and time controls. **AI opponents** offers 30 Stockfish settings with adjustable search time. **Multiplayer** creates an invitation, joins a room by code, or starts casual matchmaking. **Ranked** matches players with the same time control and shows the seasonal ladder. The camera control below the board switches between 3D and 2D without resetting play.
+Select **New game** for local rules and time controls. **AI opponents** offers 100 rated presets, manual Elo, and maximum-strength Stockfish Lite. **Multiplayer** creates an invitation, joins a room by code, or starts casual matchmaking. **Ranked** matches players with the same time control and shows the seasonal ladder. The camera control below the board switches between 3D and 2D without resetting play.
 
 ## Deploy to Cloudflare Workers
 
@@ -54,14 +54,14 @@ The home screen previews the current setup with a slowly orbiting camera. Open *
 
 Right-drag to orbit, middle-drag to pan, and scroll to zoom. In Seated view, right-drag to look from the player's chair and left-click to play. In Free roam, use **WASD** or the touchscreen arrows to walk, and drag to look. Press **C** to cycle cameras and **R** to reset. Double-click a piece in a match to focus on it. Open **Photography mode** to adjust field of view, exposure, background blur, focus distance and lighting, pause the environment, and save a PNG.
 
-**Ranked AI** starts at 400 Elo and uses nearby bot difficulty targets, separate browser-local rating history, and eleven in-game ranks. From the match panel, **Game info** supports saving a casual game, requesting a hint in casual AI, or undoing the last casual AI turn. **Challenges** includes interactive lessons. Custom casual clocks support increments.
+**Ranked AI** starts new players at 0 Elo and uses nearby bot targets, a separate browser-local rating history, and 22 fictional ranks. From the match panel, **Game info** supports saving a casual game, requesting a hint in casual AI, or undoing the last casual AI turn. **Challenges** includes interactive lessons. Custom casual clocks support increments. [Ranked AI rules and calibration](docs/ranked-ai.md)
 
 ## Graphics and modes
 
 - Twenty-nine locations use 3D architecture and scenery, site-specific furniture and motion, and local reflection probes at compatible quality settings. The room and board are independently selectable. Existing location preferences are mapped to the closest available 3D location.
 - Fifty-three piece editions include twenty new animated models. Their geometry, moving components, surface shaders and move and capture effects can be previewed in the showroom. The board library includes 42 finishes, 22 with animated shaders. Higher quality settings raise texture and shadow resolution. **Low** and **2D** are available for less powerful devices.
 - Standard chess, Chess960, King of the Hill, Three-Check, Crazyhouse, and a local Fog of War ruleset. Fog keeps standard legal movement and shows the side to move its own pieces and legal destinations. Move history is revealed at the end. Variant games are local, and online matches use standard chess.
-- The lower ten strengths use a separate Web Worker with progressively stronger tactical awareness and controlled mistakes. Higher levels and analysis use Stockfish Lite in a Web Worker. Elo labels are approximate difficulty targets.
+- Ranked and casual AI use a dedicated Web Worker for weaker bots and progressively larger Stockfish Lite searches at higher ratings. Game review continues to use its own Stockfish Lite worker. Elo labels are approximate difficulty targets.
 - Puzzles, a rotating daily selection, progressive Survival and themed Boss Battles. Finished standard games support move replay, PGN export, and Stockfish analysis. Sandbox accepts a FEN or the final position of an imported PGN.
 - Stockfish review includes engine candidate lines, a clickable evaluation graph, move classifications, per-side accuracy and an opening explorer. See the [review controls and scoring method](docs/stockfish-review.md).
 - Local XP tracks eligible completed matches, AI wins, and first-time puzzle solves. Profile avatars unlock at player levels 2 and 4.
@@ -79,15 +79,7 @@ Automated coverage includes standard perft through depth five and Kiwipete throu
 
 ## Internal AI benchmark
 
-Run `node scripts/benchmark-ai.js 8` to repeat the 24-game color-swapped sample. Each pairing uses four starting openings, deterministic beginner seeds, and a 72-ply cap. Stockfish uses a fixed 1,500-node search budget in this benchmark.
-
-| Targets | Finished wins for stronger target | Finished wins for weaker target | Capped positions ahead / behind for stronger target |
-| --- | ---: | ---: | ---: |
-| 100 / 500 | 2 | 0 | 5 / 1 |
-| 500 / 1000 | 6 | 0 | 2 / 0 |
-| 1000 / 1500 | 7 | 0 | 1 / 0 |
-
-All 1,348 played plies were legal. Material at the cap is reported separately from game results. This sample checks relative strength for those pairings and does not estimate human Elo.
+Run `node scripts/benchmark-ai.js 8` for the color-swapped tournament and position probes. [Measured results](docs/ranked-ai.md)
 
 ## Visual references and assets
 

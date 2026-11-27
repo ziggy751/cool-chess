@@ -6,7 +6,7 @@ The phone saves its wallpaper, finish, brightness, app order and other preferenc
 
 | App | What you can do |
 | --- | --- |
-| YouTube Shorts | Choose **Open Shorts on YouTube** to open the official feed in a separate tab. Your browser handles playback and optional sign-in. |
+| YouTube Shorts | Watch a curated, shuffleable feed in the phone using YouTube’s embedded player. Swipe the video grip or use the arrow controls. |
 | AI Shorts | Browse pre-generated footage or screen batches of three original animated Brainrot memes. Use format filters, history, bookmarks, narration and effects controls. |
 | Arcade | Browse 23 entries, including Chess Puzzles, with screenshots captured from the games. Find titles or categories, see personal bests, and add favourites or phone Home shortcuts. |
 | Flappy Wings | Tap, click, or use Space to flap through the gates. Reach eight points to unlock the kingfisher skin. Pick from six environments. |
@@ -25,7 +25,7 @@ The phone saves its wallpaper, finish, brightness, app order and other preferenc
 
 The chess clock keeps running on your turn. The phone displays a turn notice, and its default settings pause current videos and games when the turn changes. Resume from the app’s controls. Competitive matches disable YouTube and Chess Puzzles and limit the native clip library to approved, non-instructional videos.
 
-Closing the in-game phone pauses its local video apps. To stop YouTube playback, pause or close the YouTube tab. [YouTube Shorts setup and testing](youtube-shorts.md)
+Closing, minimizing, or changing apps pauses the Shorts player. Reopen the app to return to the current Short. [YouTube Shorts setup and testing](youtube-shorts.md)
 
 ## Browser captures
 

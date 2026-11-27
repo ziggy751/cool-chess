@@ -46,7 +46,7 @@ test('the Christmas menu and all four room previews load with real geometry',asy
 test('playing a clip leaves the AI match responsive and pauses on return of the turn',async({page})=>{
   await page.goto('/')
   await button(page,'Play vs AI').click()
-  await page.getByLabel('Difficulty').selectOption('1')
+  await page.getByLabel('Difficulty',{exact:true}).selectOption('0')
   await page.getByLabel('Thinking time').selectOption('3000')
   await button(page,'Start game').click()
   await button(page,'Open Side Reel phone').click()

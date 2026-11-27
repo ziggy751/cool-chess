@@ -75,4 +75,13 @@ import folder from 'lucide-static/icons/folder.svg?raw'
 Object.assign(icons,{target,timer,'circle-dot':circleDot,rocket,mountain,bell,folder})
 import headphones from 'lucide-static/icons/headphones.svg?raw'
 icons.headphones=headphones
+import volumeOff from 'lucide-static/icons/volume-x.svg?raw'
+import verticalGrip from 'lucide-static/icons/grip-vertical.svg?raw'
+import shield from 'lucide-static/icons/shield.svg?raw'
+import compass from 'lucide-static/icons/compass.svg?raw'
+import gem from 'lucide-static/icons/gem.svg?raw'
+import flame from 'lucide-static/icons/flame.svg?raw'
+import trophy from 'lucide-static/icons/trophy.svg?raw'
+import orbit from 'lucide-static/icons/orbit.svg?raw'
+Object.assign(icons,{'volume-x':volumeOff,'grip-vertical':verticalGrip,shield,compass,gem,flame,trophy,orbit})
 export const icon = name => icons[name] || ""

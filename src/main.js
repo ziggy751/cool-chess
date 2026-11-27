@@ -7,6 +7,7 @@ import './style.css'
 import './overhaul.css'
 import './gameplay.css'
 import './review.css'
+import './ranked-ai.css'
 import './phone.css'
 import './handset/studio.css'
 import { Chess } from 'chess.js'
@@ -21,7 +22,9 @@ import { Online } from './online.js'
 import { collectionList } from './collections.js'
 import { locations, locationFor, tables, lightingStyles } from './worlds/catalog.js'
 import { showroom, cameras, movements, applyCollection } from './garage.js'
-import { freshLadder, rankOf, rateAI, ratedOpponent } from './ranked-ai.js'
+import { loadLadder, rankOf, rateAI, ratedOpponent, resetLadder } from './ranked-ai.js'
+import { botCategories, botProfile, botRating, botRatings } from './bot-profiles.js'
+import { rankEmblem } from './rank-emblem.js'
 import { lessons } from './training.js'
 import { playSound, roomSound, updateRoomListener } from './sound.js'
 import { icon } from './icons.js'
@@ -147,6 +150,7 @@ $('app').innerHTML = `
       <aside class="match-panel" aria-label="Match panel">
         <div class="match-header"><span class="match-icon">${icon('swords')}</span><div><h2>Match details</h2><p id="match-type">Local game</p></div></div>
         <div class="status" id="status" aria-live="polite"></div>
+        <button class="secondary full" id="retry-ranked-engine" hidden>Retry opponent</button>
         <p class="last-play" id="last-play" hidden></p>
         <div id="live-coach" class="live-coach" hidden></div>
         <button class="secondary live-return" id="return-live" hidden>Return to live game</button>
@@ -173,7 +177,7 @@ const defaultMinutes = 10
 let local = new Match({minutes:defaultMinutes})
 let state = local.snapshot()
 let mode = 'local', selected = null, drop = null, flipped = false, flat = false, replay = null, tab = 'moves'
-let level = 12, runLevel = 1, bossTheme = null, thinkTime = 450, engine, puzzle, puzzleSolved = false
+let level = 12, selectedBot = 1200, matchBot = null, botTime = null, runLevel = 1, bossTheme = null, thinkTime = 450, engine, puzzle, puzzleSolved = false
 let waiting = false, onlineState, onlineColor, linked = false, ping = 0, roomCode, motionKey = '', lastPly = 0
 let stateAt = performance.now(), firstMove = true, noticeTimer, lastResult
 let history = read('history',[])
@@ -183,17 +187,49 @@ const liveGrades=new Map()
 let screen='home', studioReturn='home', hasMatch=false
 const previewPosition=new Chess()
 let experience = read('xp',0)
-let ladder={...freshLadder(),...read('ai-ladder',{})}
+let ladder=loadLadder(read('ai-ladder',null))
+const localId=()=>crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint32Array(4)),value=>value.toString(16).padStart(8,'0')).join('')
+const rankedTab=localId()
+let rankedId=null, rankedStale=false, rankedSettling=false, enginePausedAt=null
 let lesson, trainingSolved=false, premove=null, pendingSquare=null, lastCheck=''
 let submittedMove=null, awaitingSnapshot=false, previousTurn=null, sessionReplaced=false
-let aiFavourites=new Set(read('ai-favourites',[]))
+let aiFavourites=new Set(read('ai-favourites',[]).map(id=>id===30?'max':botRating(id*100)))
+aiFavourites=new Set(read('ai-bot-favourites',aiFavourites))
 let savePoint=read('casual-save',null)
-const rankBlocked=()=> (mode==='ai-ranked' || (mode==='online' && onlineState?.division && onlineColor)) && !state.result && hasMatch
-const persistLadder=()=>persist('ai-ladder',ladder)
+const rankBlocked=()=> rankedSettling || (mode==='ai-ranked' || (mode==='online' && onlineState?.division && onlineColor)) && !state.result && hasMatch
+async function updateLadder(update){
+  const transaction=()=>{
+    const stored=loadLadder(read('ai-ladder',null))
+    const next=update(stored)
+    if(next)persist('ai-ladder',next)
+    ladder=next || stored
+    return next
+  }
+  return navigator.locks?navigator.locks.request('chess-evolution-ai-ladder',transaction):transaction()
+}
+const ownsRanked=stored=>stored.active?.id===rankedId && stored.active.owner===rankedTab
 function saveRanked() {
-  if (mode!=='ai-ranked' || !ladder.active || state.result) return
-  ladder.active={...ladder.active,game:local.save()}
-  persistLadder()
+  if (mode!=='ai-ranked' || rankedStale || state.result) return
+  const game=local.save(), pausedAt=enginePausedAt
+  void updateLadder(stored=>ownsRanked(stored)?{...stored,active:{...stored.active,game,pausedAt}}:null)
+    .catch(()=>toast('Ranked progress could not be saved in this browser'))
+}
+window.addEventListener('storage',event=>{
+  if(event.key!=='evolution-ai-ladder')return
+  ladder=loadLadder(read('ai-ladder',null))
+  if(mode==='ai-ranked' && !state.result && !ownsRanked(ladder)){
+    rankedStale=true
+    stopEngine()
+    render()
+  }
+})
+
+function botInGame(){
+  return matchBot || opponentAt(level)
+}
+
+function botStrength(bot){
+  return bot.label ?? (typeof bot.rating==='number'?bot.rating+' Elo':'Maximum')
 }
 
 const stage = $('stage')
@@ -242,6 +278,9 @@ const online = new Online(message => {
     stopCoaching(true)
     stopEngine()
     mode = 'online'
+    matchBot=null
+    rankedStale=false
+    enginePausedAt=null
     hasMatch=true
     awaitingSnapshot=true
     sessionReplaced=false
@@ -321,16 +360,19 @@ function toast(message) {
   noticeTimer = setTimeout(() => { $('toast').hidden = true },3400)
 }
 
-function startLocal(kind = 'local',minutes = defaultMinutes,fen,variant='standard',increment=0) {
+function startLocal(kind = 'local',minutes = defaultMinutes,fen,variant='standard',increment=0,bot=null,restored=null) {
   if (rankBlocked()) { toast('Finish or resign your ranked match first');return false }
-  const next = new Match({minutes,fen,variant,increment})
+  const next = restored || new Match({minutes,fen,variant,increment})
   online.leave()
   stopEngine()
   stopCoaching(true)
   local = next
   mode = kind
+  matchBot=bot
+  rankedStale=false
+  if(kind!=='ai-ranked')enginePausedAt=null
   hasMatch=true
-  firstMove = kind!=='ai-ranked'
+  firstMove = kind!=='ai-ranked' && !restored
   trainingSolved=false
   premove=null
   submittedMove=null
@@ -358,13 +400,12 @@ function startLocal(kind = 'local',minutes = defaultMinutes,fen,variant='standar
   if (kind !== 'boss') bossTheme = null
   showScreen('match')
   refreshLocal()
-  saveRanked()
   if (versusAI()) requestMove()
   return true
 }
 
 function refreshLocal() {
-  state = local.snapshot(firstMove ? local.started : Date.now())
+  state = local.snapshot(firstMove ? local.started : enginePausedAt ?? Date.now())
   saveRanked()
   render()
 }
@@ -381,7 +422,7 @@ function moveFor(current, move) {
   return current.move({from:move.from,to:move.to,promotion:move.promotion,drop:move.drop})
 }
 function canPlay() {
-  return screen==='match' && replay === null && !state.result && !puzzleSolved && !trainingSolved &&
+  return screen==='match' && replay === null && !state.result && !rankedStale && !puzzleSolved && !trainingSolved &&
     (mode === 'online' ? linked && !awaitingSnapshot && submittedMove===null && onlineState?.match && turn() === onlineColor
       : !versusAI() || turn() === 'w')
 }
@@ -389,7 +430,7 @@ function canPlay() {
 function canPremove() {
   const side=playerSide()
   return Boolean(screen==='match' && side && settings.premoves && state.variant==='standard' &&
-    !state.result && replay===null && turn()!==side &&
+    !state.result && !rankedStale && replay===null && turn()!==side &&
     (mode!=='online' || linked && !awaitingSnapshot && onlineState?.match))
 }
 
@@ -528,20 +569,32 @@ function selectSquare(square) {
 
 function stopEngine() { engine?.close(); engine = null }
 async function requestMove() {
-  if (!versusAI() || turn() !== 'b' || state.result) return
+  if (!versusAI() || turn() !== 'b' || state.result || rankedStale || enginePausedAt!==null) return
   const search = engine ||= new Engine()
   const fen = state.fen
+  let watchdog
   try {
-    const move = await search.move(fen,level,thinkTime,opponentAt(level).style)
-    if (!move || engine !== search || !versusAI() || state.fen !== fen) return
+    const request=matchBot?search.profileMove(fen,matchBot,mode==='ai-ranked'?undefined:botTime ?? undefined):
+      search.move(fen,level,thinkTime,opponentAt(level).style)
+    const move=mode==='ai-ranked'?await Promise.race([request,new Promise((_,reject)=>{
+      watchdog=setTimeout(()=>reject(new Error('The opponent stopped responding')),10000)
+    })]):await request
+    if (engine !== search || !versusAI() || state.fen !== fen || state.result) return
+    if(!move)throw new Error('The opponent did not return a legal move')
     if (firstMove) { local.began=local.started=Date.now(); firstMove=false }
     const played=local.move({from:move.slice(0,2),to:move.slice(2,4),promotion:move[4]},'b')
     sound(played.captured?105:167,played.color)
     refreshLocal()
     runPremove()
   } catch (error) {
-    if (engine === search && !local.result) toast(error.message)
-  }
+    if(engine!==search)return
+    stopEngine()
+    if(local.result){refreshLocal();return}
+    if(mode==='ai-ranked'){
+      enginePausedAt=Date.now()
+      refreshLocal()
+    }else toast(error.message)
+  }finally{clearTimeout(watchdog)}
 }
 
 function sound(frequency,color) {
@@ -777,7 +830,7 @@ function clockText(ms) {
 
 function players() {
   const captures = {w:[],b:[]}
-  const bot=versusAI()?opponentAt(level):null
+  const bot=versusAI()?botInGame():null
   for (const move of fogged() ? [] : state.moves) if (move.captured) captures[move.color].push(move.captured)
   const weights = {p:1,n:3,b:3,r:5,q:9}
   for (const [id,color] of [['opponent',flipped ? 'w' : 'b'],['player',flipped ? 'b' : 'w']]) {
@@ -786,7 +839,7 @@ function players() {
     const own=color===playerSide()
     const isBot=bot && color==='b'
     const name=own?'You':isBot?bot.name:person?.name || side
-    const rating=isBot?bot.rating+' Elo target':mode==='ai-ranked' && color==='w'?ladder.rating+' AI Elo':
+    const rating=isBot?botStrength(bot):mode==='ai-ranked' && color==='w'?ladder.rating+' AI Elo':
       person?.rating!==undefined?person.rating+' Elo':''
     const onlineLabel=mode!=='online'?'':onlineState?.online.includes(color)?'Connected':
       onlineState?.match?'Disconnected':'Waiting to join'
@@ -816,7 +869,7 @@ function players() {
 }
 
 function clocks() {
-  const remaining = mode === 'online' ? {...state.clocks} : local.remaining(firstMove ? local.started : Date.now())
+  const remaining = mode === 'online' ? {...state.clocks} : local.remaining(firstMove ? local.started : enginePausedAt ?? Date.now())
   const active = !state.result && !trainingSolved && !puzzleSolved && (mode !== 'online' || onlineState?.match)
   if (active && mode === 'online') remaining[turn()] = Math.max(0,remaining[turn()] - (performance.now()-stateAt) - ping/2)
   for (const color of ['w','b']) {
@@ -849,14 +902,16 @@ function renderTurn(){
     note=state.result.winner?(state.result.winner==='w'?'White':'Black')+' wins · '+reason:reason==='Stalemate'?'':reason
     kind='over'
   }else if(trainingSolved || puzzleSolved){label=puzzleSolved?'Puzzle solved':'Exercise complete';kind='over'}
+  else if(rankedStale){label='Match opened in another tab';note='Reload this page to resume here';kind='waiting'}
+  else if(enginePausedAt!==null){label='Opponent unavailable';note='Both clocks are paused';kind='waiting'}
   else if(replay!==null){label='Reviewing position';note='Move '+replay+' of '+state.moves.length}
   else if(mode==='online' && sessionReplaced){label='Opened in another tab';note='Continue in that tab'}
   else if(mode==='online' && (!linked || awaitingSnapshot)){label='Reconnecting';note='Restoring match state'}
   else if(mode==='online' && !onlineState?.match){label='Waiting for opponent';note='Share your invite link'}
   else if(submittedMove!==null && mode==='online'){label='Sending move';note='Waiting for confirmation'}
   else if(versusAI() && color==='b'){
-    const opponent=opponentAt(level)
-    label='AI thinking';note=opponent.name+' · '+opponent.rating+' Elo target';kind='thinking'
+    const opponent=botInGame()
+    label='AI thinking';note=opponent.name+' · '+botStrength(opponent);kind='thinking'
   }else if(side){
     const opponentAway=mode==='online' && !onlineState?.online.includes(opposite(side))
     label=side===color?'Your turn':"Opponent’s turn"
@@ -890,7 +945,7 @@ function render() {
   const title = mode==='training'?lesson.name:mode === 'puzzle' ? puzzle.name : mode === 'sandbox' ? 'Sandbox' : variants[state.variant] || 'Classic Chess'
   $('game-title').textContent = title
   $('breadcrumb').textContent = title
-  $('game-subtitle').textContent = {local:'Local multiplayer',ai:'Casual AI · '+opponentAt(level).name,'ai-ranked':'Ranked AI · '+rankOf(ladder.rating).name,training:lesson?.prompt,
+  $('game-subtitle').textContent = {local:'Local multiplayer',ai:'Casual AI · '+botInGame().name,'ai-ranked':'Ranked AI · '+rankOf(ladder.rating).name,training:lesson?.prompt,
     survival:'Survival · Round '+runLevel+' · Level '+level,
     boss:bossTheme?.label+' · Level '+level,
     online:onlineColor ? 'Online multiplayer · Playing '+(onlineColor === 'w' ? 'White' : 'Black') : 'Spectating online',
@@ -899,7 +954,8 @@ function render() {
   const status = trainingSolved?'Exercise complete':state.result ? (puzzleSolved ? 'Puzzle solved' : state.result.winner ?
     (state.result.winner === 'w' ? 'White' : 'Black') + ' wins' : 'Draw') :
     mode === 'online' && !onlineState?.match ? 'Waiting for opponent' :
-      versusAI() && turn() === 'b' ? opponentAt(level).name+' is thinking' : (turn() === 'w' ? 'White' : 'Black') + ' to move'
+      rankedStale?'Match opened in another tab':enginePausedAt!==null?'Opponent unavailable · Clock paused':
+      versusAI() && turn() === 'b' ? botInGame().name+' is thinking' : (turn() === 'w' ? 'White' : 'Black') + ' to move'
   $('status').innerHTML = '<i></i><strong></strong><span></span>'
   $('status').querySelector('strong').textContent = status
   const check=!state.result && makeChess(state.fen,state.variant).isCheck()
@@ -921,6 +977,7 @@ function render() {
     lastCheck=state.fen
   }
   $('new-game').disabled=Boolean(rankBlocked())
+  $('retry-ranked-engine').hidden=enginePausedAt===null || rankedStale || Boolean(state.result)
   const checks = viewChess().remainingChecks?.()
   const rule = checks ? (3-checks.white)+' White checks · '+(3-checks.black)+' Black checks' :
     mode==='puzzle'?'Mate in one':variants[state.variant] || 'Standard rules'
@@ -933,7 +990,7 @@ function render() {
   }
   $('draw').disabled = Boolean(state.result || !['local','online'].includes(mode) || (mode === 'online' && (!onlineState?.match || !onlineColor)))
   $('draw').querySelector('span').textContent = mode === 'online' && state.drawOffer === opposite(onlineColor) ? 'Accept draw' : 'Offer draw'
-  $('resign').disabled = ['puzzle','training'].includes(mode) || mode === 'online' && (!onlineState?.match || !onlineColor)
+  $('resign').disabled = rankedStale || ['puzzle','training'].includes(mode) || mode === 'online' && (!onlineState?.match || !onlineColor)
   $('resign').querySelector('span').textContent = state.result ? (mode==='survival' && state.result.winner==='w' && level<30 ? 'Next round' : 'Rematch') : 'Resign'
   $('resign').title = onlineState?.rematch?.length ? 'Rematch requested' : ''
   renderPanel()
@@ -946,20 +1003,41 @@ function render() {
     if(screen==='match' && settings.holidayCelebrations && state.result.reason==='Checkmate' &&
       (settings.theme.startsWith('festive-') || settings.environment.startsWith('christmas-')))
       board?.celebrate(state.moves.at(-1)?.to)
-    const matchId=mode==='online' ? onlineState?.matchId || roomCode+':'+onlineState?.seq : ladder.active?.id
-    let change=mode==='online'?onlineState?.rating?.[onlineColor]:null
-    if (mode==='ai-ranked') {
-      const rated=rateAI(ladder,matchId,state.result)
-      if(rated){ladder=rated;change=ladder.history[0];persistLadder()}
-    }
-    if (matchId && history.some(game=>game.matchId===matchId)) return
-    if (mode==='survival' && state.result.winner==='w') persist('survival-best',Math.max(runLevel,read('survival-best',0)))
-    if (mode==='boss' && state.result.winner==='w') persist('bosses-won',[...new Set([...read('bosses-won',[]),level])])
-    if (state.moves.length>=4) awardXP(versusAI() && state.result.winner==='w' ? 45 : 20)
-    history = [{mode,level,matchId,result:state.result,date:Date.now(),pgn:exportPgn()},...history].slice(0,100)
-    persist('history',history)
-    if (screen==='match' && (mode!=='online' || onlineColor)) showResult(change)
+    if (mode==='ai-ranked') { void settleRanked();return }
+    const matchId=mode==='online' ? onlineState?.matchId || roomCode+':'+onlineState?.seq : null
+    recordGame(matchId,mode==='online'?onlineState?.rating?.[onlineColor]:null)
   }
+}
+
+function recordGame(matchId,change){
+  if (matchId && history.some(game=>game.matchId===matchId)) return
+  if (mode==='survival' && state.result.winner==='w') persist('survival-best',Math.max(runLevel,read('survival-best',0)))
+  if (mode==='boss' && state.result.winner==='w') persist('bosses-won',[...new Set([...read('bosses-won',[]),level])])
+  if (state.moves.length>=4) awardXP(versusAI() && state.result.winner==='w' ? 45 : 20)
+  history = [{mode,level,botRating:matchBot?.rating,matchId,result:state.result,date:Date.now(),pgn:exportPgn()},...history].slice(0,100)
+  persist('history',history)
+  if (screen==='match' && (mode!=='online' || onlineColor)) showResult(change)
+}
+
+async function settleRanked(){
+  if(rankedStale || rankedSettling)return
+  rankedSettling=true
+  $('new-game').disabled=true
+  $('resign').disabled=true
+  const id=rankedId
+  const {result,duration,minutes,moves}=state
+  let rated
+  try{
+    rated=await updateLadder(stored=>ownsRanked(stored)?rateAI(stored,id,result,Date.now(),{duration,minutes,moves:moves.length}):null)
+  }catch(error){
+    toast('Ranked result could not be saved. Free up browser storage and retry.')
+    $('resign').querySelector('span').textContent='Retry saving result'
+    $('resign').disabled=false
+    return
+  }finally{rankedSettling=false}
+  if(mode!=='ai-ranked' || rankedId!==id)return
+  render()
+  if(rated)recordGame(id,rated.history[0])
 }
 
 function exportPgn() {
@@ -1143,27 +1221,17 @@ function setup(kind='local') {
     </div>${savePoint?action('download','Resume saved game','resume-saved','secondary full'):''}` : ''}
     <form id="start-form">
     ${timeControl(state.minutes || defaultMinutes)}
-    ${ai ? '<label>Difficulty<select id="level">'+options(Array.from({length:30},(_,i)=>[i+1,(i===29?'Maximum':(i+1)*100+' Elo')+' · '+opponentAt(i+1).name]),level)+'</select></label><div id="opponent-detail" class="bot-detail"></div><button type="button" class="secondary" id="favorite-ai">Favourite opponent</button><label>Thinking time<select id="think-time">'+options([[0,'Instant'],[150,'Fast · 150 ms'],[450,'Normal · 450 ms'],[1200,'Deep · 1.2 s'],[3000,'Extended · 3 s']],thinkTime)+'</select></label>' : '<label>Rules<select id="variant">'+options(Object.entries(variants),state.variant)+'</select></label><label id="start-position-field">Starting position<select id="start-position"><option value="normal">Standard opening</option><option value="custom">Custom FEN / PGN</option></select></label><label id="custom-fen" hidden>FEN or PGN<textarea id="fen" rows="4" spellcheck="false"></textarea></label>'}
+    ${ai ? `<div class="bot-picker">
+      <div class="two-fields"><label>Difficulty category<select id="bot-category">${options([['all','All opponents'],...botCategories.map(group=>[group.name,group.name]),['favourites','Favourites'],['max','Maximum strength']],'all')}</select></label>
+        <label>Difficulty<select id="level" aria-label="Difficulty"></select></label></div>
+      <div class="two-fields bot-rating-inputs"><label>Elo slider<input type="range" id="bot-slider" min="0" max="3000" step="1"></label>
+        <label>Opponent Elo<input type="number" id="bot-rating" min="0" max="3000" inputmode="numeric"></label></div>
+      <div class="bot-tools"><button type="button" class="secondary" id="recommended-ai">Recommended difficulty</button><button type="button" class="secondary" id="favorite-ai">Favourite opponent</button></div>
+      <div id="opponent-detail"></div>
+      <label>Thinking time<select id="think-time">${options([['auto','By opponent'],[0,'Instant'],[150,'Fast · 150 ms'],[450,'Normal · 450 ms'],[1200,'Deep · 1.2 s'],[3000,'Extended · 3 s']],botTime ?? 'auto')}</select></label></div>` : '<label>Rules<select id="variant">'+options(Object.entries(variants),state.variant)+'</select></label><label id="start-position-field">Starting position<select id="start-position"><option value="normal">Standard opening</option><option value="custom">Custom FEN / PGN</option></select></label><label id="custom-fen" hidden>FEN or PGN<textarea id="fen" rows="4" spellcheck="false"></textarea></label>'}
     <p class="form-error" id="form-error" role="alert"></p><button class="primary full">Start game</button></form>`)
   bindClock()
-  if (ai) {
-    const choose = () => {
-      const opponent = opponentAt(+$('level').value)
-      const records=history.filter(game=>game.mode==='ai' && game.level===+$('level').value)
-      $('opponent-detail').replaceChildren(el('span','bot-avatar',opponent.avatar),el('p','',opponent.title+' · '+opponent.description+' '+records.filter(game=>game.result.winner==='w').length+' W / '+records.filter(game=>game.result.winner==='b').length+' L'))
-      $('favorite-ai').setAttribute('aria-pressed',String(aiFavourites.has(+$('level').value)))
-      $('favorite-ai').textContent=aiFavourites.has(+$('level').value)?'Remove favourite':'Favourite opponent'
-    }
-    $('favorite-ai').onclick=()=>{
-      const id=+$('level').value
-      if(aiFavourites.has(id))aiFavourites.delete(id)
-      else aiFavourites.add(id)
-      persist('ai-favourites',[...aiFavourites])
-      choose()
-    }
-    $('level').onchange = choose
-    choose()
-  }
+  if (ai) bindBotPicker()
   if (!ai) {
     $('choose-local').onclick = () => setup()
     $('choose-ai').onclick = () => setup('ai')
@@ -1196,9 +1264,13 @@ function setup(kind='local') {
           fen = imported.fen()
         }
       }
-      if (ai) { level = +$('level').value; thinkTime = +$('think-time').value }
+      if (ai) {
+        if(!$('level').value)throw new Error('Choose an opponent')
+        selectedBot=botRating($('level').value)
+        botTime=$('think-time').value==='auto'?null:+$('think-time').value
+      }
       const {minutes,increment}=clockOptions()
-      startLocal(custom ? 'sandbox' : kind,minutes,fen,variant,increment)
+      startLocal(custom ? 'sandbox' : kind,minutes,fen,variant,increment,ai?botProfile(selectedBot):null)
     } catch (error) { $('form-error').textContent = error.message }
   }
 }
@@ -1213,56 +1285,186 @@ function openTraining() {
   }
 }
 
-function openRankedAI() {
+function botCard(bot,meta=''){
+  const descriptions={attack:'Attack',defence:'Defence',tactics:'Tactics',openings:'Openings',endgame:'Endgame',
+    position:'Positioning',coordination:'Coordination',threats:'Threats',time:'Time management'}
+  return `<div class="bot-card"><div class="bot-card-head"><span class="bot-avatar" aria-hidden="true">${bot.avatar}</span>
+    <div><strong>${bot.name}</strong><small>${bot.style.title}</small></div><b>${bot.label}</b></div>
+    <p>${bot.description} ${bot.maximum?'':bot.style.description}</p>
+    ${meta?`<small class="bot-record">${meta}</small>`:''}
+    <details><summary>Estimated skills</summary><div class="bot-skills">${Object.entries(descriptions).map(([key,label])=>
+      `<div><span>${label}</span><meter min="0" max="100" value="${bot.abilities[key]}" aria-label="${label}"></meter><b>${bot.abilities[key]}/100</b></div>`).join('')}</div></details>
+    </div>`
+}
+
+function bindBotPicker(){
+  const category=$('bot-category'), picker=$('level'), slider=$('bot-slider'), input=$('bot-rating'), favorite=$('favorite-ai')
+  const list=()=>category.value==='favourites'?[...aiFavourites].sort((a,b)=>(a==='max'?3001:a)-(b==='max'?3001:b)):
+    category.value==='max'?['max']:category.value==='all'?[...new Set([...botRatings,selectedBot].filter(id=>id!=='max'))].sort((a,b)=>a-b).concat('max'):
+      botRatings.filter(id=>botProfile(id).category===category.value)
+  const draw=()=>{
+    const ids=list()
+    if(!ids.includes(selectedBot) && ids.length)selectedBot=ids[0]
+    picker.innerHTML=ids.length?options(ids.map(id=>{
+      const bot=botProfile(id)
+      return [id,bot.label+' · '+bot.name]
+    }),selectedBot):'<option value="">No favourites yet</option>'
+    const maximum=selectedBot==='max'
+    slider.value=maximum?3000:selectedBot
+    input.value=maximum?'':selectedBot
+    slider.disabled=input.disabled=category.value==='max'
+    favorite.disabled=!ids.length
+    favorite.setAttribute('aria-pressed',String(aiFavourites.has(selectedBot)))
+    favorite.textContent=aiFavourites.has(selectedBot)?'Remove favourite':'Favourite opponent'
+    if(!ids.length){
+      $('opponent-detail').textContent='Save opponents to find them here.'
+      return
+    }
+    const records=history.filter(game=>game.mode==='ai' &&
+      (game.botRating ?? (game.level===30?'max':game.level*100))===selectedBot)
+    const record=records.length?records.filter(game=>game.result.winner==='w').length+' W · '+
+      records.filter(game=>game.result.winner==='b').length+' L · '+records.filter(game=>!game.result.winner).length+' D':''
+    $('opponent-detail').innerHTML=botCard(botProfile(selectedBot),record)
+  }
+  const select=value=>{
+    selectedBot=botRating(value)
+    category.value='all'
+    draw()
+  }
+  slider.oninput=()=>select(slider.value)
+  input.onchange=()=>select(input.value)
+  picker.onchange=()=>{selectedBot=botRating(picker.value);draw()}
+  category.onchange=draw
+  $('recommended-ai').onclick=()=>select(ladder.rating)
+  favorite.onclick=()=>{
+    if(aiFavourites.has(selectedBot))aiFavourites.delete(selectedBot)
+    else aiFavourites.add(selectedBot)
+    persist('ai-bot-favourites',[...aiFavourites])
+    draw()
+  }
+  draw()
+}
+
+function openRankedAI(){
   if(rankBlocked()){toast('Finish or resign the ranked match first');return}
+  ladder=loadLadder(read('ai-ladder',null))
+  if(ladder.active){void resumeRanked();return}
   const rank=rankOf(ladder.rating)
-  show('Ranked AI',`<div class="rank-overview">
-    <div class="rank-crest" data-rank="${rank.index}" aria-hidden="true">
-      ${icon(['flag','swords','layers','crown','box','sparkles','star','crown','flag','sparkles','crown'][rank.index])}
+  const displayedElo=ladder.rating
+  const next=rank.next===undefined?null:rankOf(rank.next)
+  const rating=ratedOpponent(ladder.rating)
+  const winRate=ladder.played?Math.round(ladder.wins*100/ladder.played):0
+  const stats=[['Peak Elo',ladder.best],['Matches',ladder.played],['Wins',ladder.wins],
+    ['Losses',ladder.losses],['Draws',ladder.draws],['Win rate',winRate+'%']]
+  show('Ranked AI',`<div class="ranked-dashboard">
+    <section class="rank-summary" aria-label="Your Ranked AI standing">
+      ${rankEmblem(rank)}
+      <div class="rank-identity"><p>${rank.name}</p><strong id="current-ai-elo">${ladder.rating} <span>Elo</span></strong></div>
+      <div class="rank-progress">
+        ${next?`<div><span>Next · ${next.name}</span><span>${next.floor-ladder.rating} Elo to go</span></div>
+          <progress class="rank-meter" aria-label="Progress to ${next.name}" max="${next.floor-rank.floor}" value="${ladder.rating-rank.floor}"></progress>`
+        :'<span>Highest rank achieved</span>'}
+      </div>
+    </section>
+    <div class="rank-numbers">${stats.map(([label,value])=>`<div><span>${label}</span><strong>${value}</strong></div>`).join('')}</div>
+    <div class="ranked-columns">
+      <section class="ranked-next" aria-label="Recommended opponent"><h3>Recommended opponent</h3>
+        ${botCard(botProfile(rating))}
+        <label>Time control<select id="ranked-ai-time">${options([1,2,3,5,10,15,30].map(minutes=>[minutes,minutes+' min per side']),ladder.minutes)}</select></label>
+        ${action('swords','Play Ranked AI','find-ai','primary full')}
+      </section>
+      <section class="rank-timeline" aria-label="Rating history"><h3>Rating history</h3>
+        <canvas id="rating-graph" class="rating-graph" width="660" height="190" role="img" aria-label="Ranked AI rating history"></canvas>
+        <ol id="rank-log" class="rank-log"></ol>
+      </section>
     </div>
-    <div><strong>${rank.name}</strong><span>${ladder.rating} Elo</span></div>
-  </div>
-  ${rank.next?`<progress class="rank-meter" max="${rank.next-rank.floor}" value="${ladder.rating-rank.floor}"></progress><p>${rank.next-ladder.rating} Elo to ${rankOf(rank.next).name}</p>`:''}
-  <div class="rank-numbers"><div><span>Best Elo</span><strong>${ladder.best}</strong></div><div><span>Streak / longest</span><strong>${ladder.streak} / ${ladder.longest}</strong></div><div><span>Win / loss / draw</span><strong>${ladder.wins} / ${ladder.losses} / ${ladder.draws}</strong></div></div>
-  <canvas id="rating-graph" class="rating-graph" width="780" height="160" aria-label="Ranked AI rating history"></canvas>
-  <div class="list" id="rank-log"></div>
-  ${!ladder.played?`<label class="toggle"><input type="checkbox" id="placement" ${ladder.placements?'checked':''}> Faster Elo changes for first five matches</label>`:''}
-  <button class="primary full" id="find-ai">Find match · 10 minutes</button>`)
-  const trend=[400,...ladder.history.slice(0,36).reverse().map(row=>row.rating)]
-  if(ladder.history.length>36)trend.shift()
+    <div class="rank-footer"><small>Saved in this browser · Separate from Ranked Online</small>
+      ${ladder.resetAvailable?'<button type="button" class="secondary" id="reset-ai-rating">Reset legacy progress</button>':''}</div>
+    </div>`)
+  const rows=ladder.history.slice(0,36).reverse()
+  const trend=rows.length?[rows[0].before,...rows.map(row=>row.rating)]:[ladder.rating]
   ratingChart($('rating-graph'),trend)
-  for(const row of ladder.history.slice(0,5)){
-    const name=opponentAt(row.level).name
-    const item=el('div','info-row')
-    item.append(el('span','',name+' · '+(row.result.winner==='w'?'Victory':row.result.winner==='b'?'Defeat':'Draw')),
-      el('strong','',signed(row.delta)+' Elo'))
+  for(const row of ladder.history.slice(0,6)){
+    const opponent=row.opponent ?? row.level*100
+    const item=el('li','rank-history-row')
+    item.append(el('span','',row.result.winner==='w'?'Victory':row.result.winner==='b'?'Defeat':'Draw'),
+      el('small','',opponent+' Elo opponent'),el('strong',row.delta>0?'rating-up':row.delta<0?'rating-down':'',signed(row.delta)))
     $('rank-log').append(item)
   }
-  $('find-ai').onclick=()=>{
-    if($('placement'))ladder.placements=$('placement').checked
-    level=ratedOpponent(ladder.rating)
-    thinkTime=385
-    ladder.active={id:crypto.randomUUID(),level}
-    startLocal('ai-ranked',10)
+  if(!ladder.history.length)$('rank-log').append(el('li','rank-empty','Your first result will appear here.'))
+  $('find-ai').onclick=async()=>{
+    $('find-ai').disabled=true
+    const minutes=+$('ranked-ai-time').value
+    const match=new Match({minutes})
+    const id=localId()
+    try{
+      const next=await updateLadder(stored=>{
+        if(stored.active || stored.rating!==displayedElo)return null
+        return {...stored,minutes,active:{id,rating,game:match.save(),owner:rankedTab}}
+      })
+      if(!next){openRankedAI();return}
+      rankedId=id
+      enginePausedAt=null
+      startLocal('ai-ranked',minutes,undefined,'standard',0,botProfile(rating),match)
+    }catch{
+      if($('find-ai'))$('find-ai').disabled=false
+      toast('Ranked progress requires storage in this browser')
+    }
   }
+  if($('reset-ai-rating'))$('reset-ai-rating').onclick=()=>{
+    show('Reset legacy Ranked AI progress?',`<p>This one-time reset clears your previous Ranked AI rating and match stats and starts you at 0 Elo.</p>
+      <div class="result-buttons"><button class="secondary" id="cancel-ai-reset">Cancel</button><button class="primary" id="confirm-ai-reset">Reset Ranked AI</button></div>`)
+    $('cancel-ai-reset').onclick=openRankedAI
+    $('confirm-ai-reset').onclick=async()=>{
+      await updateLadder(resetLadder)
+      openRankedAI()
+    }
+  }
+}
+
+async function resumeRanked(){
+  let restored
+  const next=await updateLadder(stored=>{
+    if(!stored.active)return null
+    try{
+      restored=Match.restore(stored.active.game)
+      if(restored.initial!==START || restored.variant!=='standard' || !restored.minutes)throw new Error('Invalid ranked match')
+    }
+    catch{return {...stored,active:null}}
+    return {...stored,active:{...stored.active,owner:rankedTab}}
+  })
+  if(!next?.active){if(next)toast('The saved match could not be restored. Your Elo stayed the same.');return}
+  rankedId=next.active.id
+  enginePausedAt=next.active.pausedAt ?? null
+  const legacy=Number.isInteger(next.active.level) && next.active.level>=1 && next.active.level<=30
+  if(legacy){level=next.active.level;thinkTime=385}
+  startLocal('ai-ranked',restored.minutes,undefined,'standard',restored.increment,legacy?null:botProfile(next.active.rating),restored)
 }
 
 function ratingChart(canvas,history) {
   const ctx=canvas.getContext('2d'),{width,height}=canvas
-  const low=Math.min(...history)-22,high=Math.max(...history)+22
+  const low=Math.max(0,Math.min(...history)-20),high=Math.max(...history)+20
+  const left=74,right=18,top=18,bottom=22
+  const yAt=value=>top+(height-top-bottom)*(1-(value-low)/(high-low))
+  ctx.font='20px "DM Sans", sans-serif'
   ctx.strokeStyle='#434047'
-  for (const y of [height*.25,height*.5,height*.75]){
-    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke()
+  ctx.fillStyle='#c4afa1'
+  for (const value of [low,Math.round((high+low)/2),high]){
+    const y=yAt(value)
+    ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(width-right,y);ctx.stroke()
+    ctx.fillText(String(value),5,y+5)
   }
   ctx.strokeStyle='#dfbb85';ctx.lineWidth=4
   ctx.beginPath()
   history.forEach((value,index)=>{
-    const x=8+(width-16)*index/Math.max(1,history.length-1)
-    const y=12+(height-24)*(1-(value-low)/(high-low))
+    const x=left+(width-left-right)*index/Math.max(1,history.length-1)
+    const y=yAt(value)
     if(index)ctx.lineTo(x,y);else ctx.moveTo(x,y)
-    if(history.length===1)ctx.lineTo(width-8,y)
+    if(history.length===1)ctx.lineTo(width-right,y)
   })
   ctx.stroke()
+  ctx.fillStyle='#edc991'
+  ctx.beginPath();ctx.arc(width-right,yAt(history.at(-1)),5,0,Math.PI*2);ctx.fill()
 }
 
 const signed = value => (value>0?'+':'')+value
@@ -1272,15 +1474,15 @@ function showResult(change) {
   const perspective=mode==='online'?onlineColor:versusAI()?'w':null
   const outcome=!final.winner?'Draw':perspective?final.winner===perspective?'Victory':'Defeat':final.winner==='w'?'White wins':'Black wins'
   const duration=Math.floor((state.duration || 0)/1000)
-  const opponent=versusAI()?opponentAt(level).name:mode==='online'?'Online opponent':'Local multiplayer'
+  const opponent=versusAI()?botInGame().name+' · '+botStrength(botInGame()):mode==='online'?'Online opponent':'Local multiplayer'
   const current=mode==='ai-ranked' && change?rankOf(change.rating):null
   const promoted=current && current.index>rankOf(change.before).index
   show(outcome,`<div class="result-body ${promoted?'rank-promotion':''}">
     <div class="result-mark">${icon(final.winner?'crown':'handshake')}</div>
     <p class="result-reason" id="result-reason"></p><p class="result-opponent" id="result-opponent"></p>
     ${change?`<div class="result-elo"><span>${change.before}</span><span>→</span><strong>${change.rating}</strong><b>${signed(change.delta)} Elo</b></div>`:''}
-    ${promoted?`<p class="result-promotion">Promoted to ${current.name}</p>`:''}
-    <div class="result-details"><span>${Math.ceil(state.moves.length/2)} moves</span><span>${Math.floor(duration/60)}m ${duration%60}s</span></div>
+    ${current?`<div class="result-rank">${rankEmblem(current)}<p class="${promoted?'result-promotion':''}">${promoted?'Promoted to ':current.index<rankOf(change.before).index?'Moved to ':''}${current.name}</p></div>`:''}
+    <div class="result-details"><span>${state.moves.length} half-moves</span><span>${Math.floor(duration/60)}m ${duration%60}s</span></div>
     <div class="result-buttons">
       <button class="primary" id="result-repeat">${mode==='ai-ranked'?'Next ranked match':'Rematch'}</button>
       ${state.moves.length?`<button class="secondary" id="result-review">Review game</button>`:''}
@@ -1302,7 +1504,7 @@ function showResult(change) {
 function saveCasual() {
   const game=local.save()
   game.clocks=local.remaining(firstMove?local.started:Date.now())
-  savePoint={game,mode,level,thinkTime}
+  savePoint={game,mode,level,thinkTime,rating:matchBot?.rating,botTime}
   persist('casual-save',savePoint)
   stopEngine()
   hasMatch=false
@@ -1327,6 +1529,8 @@ function resumeCasual() {
     mode=saved.mode
     level=saved.level
     thinkTime=saved.thinkTime
+    matchBot=saved.rating!==undefined?botProfile(saved.rating):null
+    botTime=saved.botTime ?? null
     firstMove=false
     hasMatch=true
     selected=null
@@ -1776,6 +1980,7 @@ function stats() {
   const container = $('stats')
   const profileLevel = 1+Math.floor(experience/120)
   container.append(el('p','','Level '+profileLevel+' · '+experience+' XP'))
+  container.append(el('p','','Ranked AI · '+rankOf(ladder.rating).name+' · '+ladder.rating+' Elo'))
   const rewardRow = el('div','list')
   rewardRow.append(el('h3','','Profile avatars'))
   for (const [mark,label,required] of [['G','Guest',1],['♞','Knight',2],['♛','Crown',4]]) {
@@ -1933,24 +2138,39 @@ $('draw').onclick = () => {
   }
 }
 $('resign').onclick = () => {
+  if(rankedStale || rankedSettling)return
   if (state.result) {
-    if (mode==='ai-ranked') {openRankedAI();return}
+    if (mode==='ai-ranked') {
+      if(ownsRanked(ladder))void settleRanked()
+      else openRankedAI()
+      return
+    }
     if (mode === 'online') { online.send({type:'rematch'}); toast('Rematch requested'); return }
     if (mode==='survival') {
       runLevel = state.result.winner==='w' && level<30 ? runLevel+1 : 1
       level = Math.min(30,runLevel*2-1)
     }
-    startLocal(mode,state.minutes,state.variant==='chess960'?undefined:state.initial,state.variant,state.increment)
+    startLocal(mode,state.minutes,state.variant==='chess960'?undefined:state.initial,state.variant,state.increment,matchBot)
     return
   }
   show('Resign game','<p>Resigning awards the game to the other player.</p>'+action('flag','Confirm resignation','confirm-resign','primary full'))
   $('confirm-resign').onclick = () => {
     $('dialog').close()
+    if(rankedStale)return
     if (mode === 'online') return online.send({type:'resign'})
     stopEngine()
-    local.finish(versusAI() ? 'b' : opposite(turn()),'Resignation')
+    local.finish(versusAI() ? 'b' : opposite(turn()),'Resignation',enginePausedAt ?? Date.now())
     refreshLocal()
   }
+}
+$('retry-ranked-engine').onclick=()=>{
+  if(enginePausedAt===null || rankedStale || state.result)return
+  const pause=Date.now()-enginePausedAt
+  local.started+=pause
+  local.began+=pause
+  enginePausedAt=null
+  refreshLocal()
+  void requestMove()
 }
 document.addEventListener('keydown',event => {
   if ($('dialog').open || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return
@@ -1982,7 +2202,7 @@ document.addEventListener('keydown',event => {
   if (target) { event.preventDefault(); $(target).click() }
 })
 setInterval(() => {
-  if (mode !== 'online' && !firstMove && !state.result) {
+  if (mode !== 'online' && !firstMove && !state.result && !rankedStale && enginePausedAt===null) {
     local.tick()
     if (local.result) { stopEngine(); refreshLocal() }
   }
@@ -2018,18 +2238,8 @@ const studio=showroom($('studio-screen'),{
 })
 flat=!board || settings.camera==='flat'
 const matchLink = new URL(location.href).searchParams.get('view')==='match'
-if (ladder.active?.game && !new URL(location.href).searchParams.has('room')) {
-  try {
-    local=Match.restore(ladder.active.game)
-    state=local.snapshot()
-    level=ladder.active.level
-    mode='ai-ranked'
-    hasMatch=true
-    firstMove=false
-  } catch {ladder.active=null;persistLadder()}
-}
-showScreen(matchLink || hasMatch?'match':'home')
+showScreen(matchLink?'match':'home')
 render()
-if(mode==='ai-ranked')requestMove()
+if (ladder.active?.game && !new URL(location.href).searchParams.has('room')) void resumeRanked()
 const invite = new URL(location.href).searchParams.get('room')?.toUpperCase()
 if (/^[A-F0-9]{6}$/.test(invite || '')) online.join(invite)
