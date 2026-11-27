@@ -89,7 +89,7 @@ test('known positions are classified by Stockfish and rank safety blocks review 
   await click(page,'Close')
   await click(page,'Play chess')
   await click(page,'Ranked AI')
-  await click(page,'Find match · 10 minutes')
+  await click(page,'Play Ranked AI')
   await nav(page,'Analysis').click()
   await expect(page.locator('#toast')).toContainText('Analysis is available after the match finishes')
   await expect(page.locator('#analysis-meter')).toBeHidden()

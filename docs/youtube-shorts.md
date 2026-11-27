@@ -7,7 +7,7 @@ The phone feed uses the official YouTube IFrame Player API. It shows links from 
 ## Use the feed
 
 1. Open Side Reel in a local or casual AI game, then select **YouTube Shorts**. The catalog shuffles once per phone session.
-2. Wheel or drag on the video caption or the vertical grip. Use **↑** and **↓** while the phone has keyboard focus, or use the separate previous and next buttons. The YouTube video frame retains its own clicks, swipes, and native controls. The browser does not deliver events inside that frame to the game.
+2. Swipe or wheel up for the next Short and down for the previous one. Use the video caption or vertical grip, the **↑** and **↓** keys while the phone has focus, or the previous and next buttons. The YouTube frame retains its own clicks, swipes, and native controls. The browser does not deliver events inside that frame to the game.
 3. Playback starts muted when the video is sufficiently in view and the browser allows it. Use **Unmute Short** for audio, or **Play** if autoplay is denied. The progress bar reports the current position. An unavailable embed is passed over. A network error or an exhausted feed offers a retry.
 4. Closing, minimizing, switching apps, or hiding the page pauses playback. Opening Shorts again restores the current Short and its saved position for that tab. Competitive matches retain the same restrictions. The game keeps routing clicks on the chessboard to chess.
 

@@ -132,7 +132,7 @@ test('Shorts pages with wheel, keyboard and drag, cleans up players and resumes 
   await expect(player).toHaveCount(1)
   const first=await source.getAttribute('href')
   await caption.hover()
-  await page.mouse.wheel(0,180)
+  await page.mouse.wheel(0,-180)
   await expect(source).not.toHaveAttribute('href',first)
   await expect.poll(async()=> (await call(page,'destroy')).length).toBe(1)
   await feed.getByRole('button',{name:'Next Short'}).press('ArrowUp')

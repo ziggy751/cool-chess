@@ -75,7 +75,7 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Automated coverage includes standard perft through depth five and Kiwipete through depth three, special moves and draw rules, local variants, timed moves, server move validation, reconnecting seats, ranked result persistence, private rooms in two independent browser contexts, all 30 engine settings, analysis, a mobile-width match, animated material rendering, and a location switch during a match followed by a PNG export. The timeout rules cover common insufficient-mating-material cases. Exhaustive proof of a possible mating sequence in unusual positions is outside this implementation.
+Automated coverage includes standard perft through depth five and Kiwipete through depth three, special moves and draw rules, local variants, timed moves, server move validation, reconnecting seats, ranked result persistence, private rooms in two independent browser contexts, all 100 rated bot presets and the unrestricted opponent, analysis, a mobile-width match, animated material rendering, and a location switch during a match followed by a PNG export. The timeout rules cover common insufficient-mating-material cases. Exhaustive proof of a possible mating sequence in unusual positions is outside this implementation.
 
 ## Internal AI benchmark
 

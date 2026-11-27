@@ -226,12 +226,12 @@ export function mount(host,{settings,state,audioFocus}){
 
   let lastWheel=-Infinity
   const wheel=event=>{
-    if(event.ctrlKey || Math.abs(event.deltaY)<5)return
+    if(event.ctrlKey || !event.deltaY || (event.deltaMode===0 && Math.abs(event.deltaY)<5))return
     event.preventDefault()
     const now=performance.now()
     if(now-lastWheel<320)return
     lastWheel=now
-    navigate(Math.sign(event.deltaY))
+    navigate(event.deltaY<0?1:-1)
   }
   const keys=event=>{
     if(!['ArrowUp','ArrowDown'].includes(event.key))return
