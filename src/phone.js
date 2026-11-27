@@ -120,7 +120,7 @@ export function createPhone(host,settings,save){
 
   function appearance(){
     layout.dataset.phoneSide=settings.phoneSide
-    layout.dataset.phoneSize=active==='youtube' && settings.phoneSize==='compact'?'regular':settings.phoneSize
+    layout.dataset.phoneSize=settings.phoneSize
     host.dataset.case=settings.phoneCase
     host.dataset.frame=settings.phoneFrame
     host.dataset.wallpaper=settings.phoneWallpaper
@@ -427,7 +427,7 @@ export function createPhone(host,settings,save){
         noticeButton.dataset.unread=String(active!=='notifications')
         if(active==='notifications')drawNotifications()
         if(settings.phoneGamePause && gameApps.has(active))app?.pause?.()
-        if(settings.phoneAutopause && ['youtube','comedy','clips','musiclab'].includes(active))app?.pause?.()
+        if(settings.phoneAutopause && ['comedy','clips','musiclab'].includes(active))app?.pause?.()
         chime()
       }
       turnWasActive=update.ownTurn

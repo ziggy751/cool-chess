@@ -270,12 +270,7 @@
   border-bottom:1px solid #72887b60;background:var(--handset-surface)}
 .handset-video-item[aria-pressed=true] {box-shadow:inset 2px 0 #87c7b1}
 .handset-video-item strong {font-size:10px}
-.handset-video-item small,.yt-title small {font-size:9px;color:var(--handset-dim)}
-.yt-results,.music-tracks {max-height:124px;overflow:auto}
-.yt-title {display:grid;gap:4px;font-size:11px;margin:5px 0}
-.yt-title button {width:100%}
-.yt-frame {width:100%;min-width:200px;height:310px;background:#101719;margin:5px 0}
-.yt-frame iframe {width:100%;height:100%;display:block;border:0}
+.handset-video-item small {font-size:9px;color:var(--handset-dim)}
 .arcade-score {font-size:10px;text-transform:uppercase;color:var(--handset-dim)}
 .arcade-score strong {font-size:15px;color:var(--handset-text);font-variant-numeric:tabular-nums;margin-right:auto}
 .arcade-lap {font-size:8px}

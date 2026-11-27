@@ -1,5 +1,7 @@
 # Side Reel entertainment rebuild
 
+This report describes an earlier release. The current YouTube app opens the official Shorts site in a separate tab. [Current setup](youtube-shorts.md)
+
 Start a match, then choose the phone icon below the board or press **P**. AI Shorts, the licensed Music library, AI Music Lab, Spotify shortcuts and the Arcade are separate apps. [Play on Cloudflare](https://cool-chess.52560.workers.dev/)
 
 ## Media

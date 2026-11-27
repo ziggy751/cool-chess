@@ -1,5 +1,7 @@
 # Side Reel Studio update
 
+This report describes an earlier release. The current YouTube app opens the official Shorts site in a separate tab. [Current setup](youtube-shorts.md)
+
 Open a chess match, then select the phone icon below the board or press **P**. Use **Arcade** to browse games and add Home shortcuts. **Arrange** on Home opens folder and dock controls. The bell opens match notifications. [Play on Cloudflare](https://cool-chess.52560.workers.dev/)
 
 ## Changes

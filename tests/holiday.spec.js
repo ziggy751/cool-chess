@@ -98,6 +98,7 @@ test('a private match continues across phone playback and never exposes analysis
     await nav(black,'Analysis').click()
     await expect(black.locator('#toast')).toContainText('Analysis is available after the match finishes')
     await button(black,'Open Side Reel phone').click()
+    await expect(black.locator('#match-phone [data-app=youtube]').first()).toBeDisabled()
     await black.locator('#match-phone [data-app=clips]').click()
     await expect(black.locator('#phone-category option[value=Chess]')).toHaveCount(0)
     await expect(black.locator('#phone-file')).toBeDisabled()

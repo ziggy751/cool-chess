@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import {makeShort,nextBatch,librarySize,clipDuration} from '../src/handset/meme-engine.js'
 import {orchardDrop} from '../src/handset/arcade-table.js'
 import {arcadeCatalog} from '../src/handset/game-catalog.js'
-import {collection} from '../src/handset/youtube.js'
 
 test('meme screenings reject duplicate scripts and give every timeline a timed payoff',()=>{
   const history=[]
@@ -37,9 +36,7 @@ test('orchard pieces fall and chain merges without modifying the input',()=>{
   assert.equal(orchardDrop([[0,1,2,3,4,5],[],[],[],[]],0,1),null)
 })
 
-test('the arcade catalog and real YouTube catalog use distinct game and provider identifiers',()=>{
+test('the arcade catalog uses distinct game identifiers',()=>{
   assert.equal(arcadeCatalog.length,23)
   assert.equal(new Set(arcadeCatalog.map(game=>game.id)).size,arcadeCatalog.length)
-  assert.equal(new Set(collection.map(video=>video.id)).size,collection.length)
-  assert.ok(collection.every(video=>/^[A-Za-z0-9_-]{11}$/.test(video.id) && video.creator))
 })

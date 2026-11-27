@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
 import {compose,demo,describe,genres} from '../src/handset/song-composer.js'
-import {curatedBatch,collection} from '../src/handset/youtube.js'
 import {spotifyPlaylist} from '../src/handset/spotify.js'
 import {createAudioFocus} from '../src/handset/audio-focus.js'
 import {makeShort,nextBatch,seedForStory,storyCount} from '../src/handset/meme-engine.js'
@@ -34,21 +33,6 @@ test('new story formats have distinct shots and timings and produce category-fil
   assert.equal(batch.length,3)
   assert.ok(batch.every(clip=>clip.format==='key' && clip.universe==='The Key Bureau'))
   assert.notEqual(makeShort(101).id,makeShort(seedForStory(101)).id)
-})
-
-test('YouTube batches are finite and do not repeat previous links',()=>{
-  const shorts=collection.filter(video=>video.vertical)
-  const seen=new Set()
-  const first=curatedBatch(shorts,seen,3,()=>.28)
-  first.forEach(item=>seen.add(item.id))
-  for(let i=0;i<shorts.length;i++){
-    const rest=curatedBatch(shorts,seen,3,()=>.4)
-    assert.ok(rest.every(clip=>!seen.has(clip.id)))
-    rest.forEach(item=>seen.add(item.id))
-    if(!rest.length)break
-  }
-  assert.equal(seen.size,shorts.length)
-  assert.deepEqual(curatedBatch(shorts,seen,3),[])
 })
 
 test('Spotify shortcuts accept only canonical playlist links and audio focus restores only paused music',()=>{

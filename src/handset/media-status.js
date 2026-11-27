@@ -6,7 +6,7 @@ export function mount(host){
     ['Generated video','Local library available','Pre-generated footage is bundled. On-demand video uses an optional paid provider and needs operator setup.'],
     ['AI Music Lab','Local composer available','Songs render in a browser worker. Hosted vocal generation requires a separate authorized provider.'],
     ['Spotify','External links available','The official website handles all Spotify playback.'],
-    ['YouTube','Official embeds available','The curated list uses public video links and YouTube’s own player.'],
+    ['YouTube','Official Shorts site','Opens in a separate browser tab. YouTube handles playback, recommendations and sign-in.'],
   ]
   host.append(heading)
   for(const [title,status,detail] of entries){

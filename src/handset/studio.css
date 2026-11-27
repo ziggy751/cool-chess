@@ -65,22 +65,13 @@
   #match-phone .handset-app{min-height:54px}
 }
 /* Media */
-.yt-poster{height:214px;padding:13px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;
-  gap:6px;background:#251b25;border:1px solid #58414f;border-radius:4px;color:#fff1e7}
-.yt-poster[hidden]{display:none}
-.yt-poster strong{font:750 19px/1.02 "DM Sans",sans-serif;letter-spacing:-.026em}
-.yt-poster small{color:#e0b7ba;font-size:10px}
-.yt-poster .yt-play-mark{margin-bottom:auto;display:grid;place-items:center;background:#b72f4a;border-radius:5px;width:34px;height:30px}
-.yt-play-mark svg{width:16px;height:16px}
-.yt-poster .handset-primary{margin-top:4px}
-.yt-library h3{font-size:15px;margin:13px 0 6px;letter-spacing:-.03em}
-.yt-library :is(select,input[type=search]){width:100%;margin-bottom:5px}
-#match-phone .yt-frame{min-width:200px;background:#111;border-radius:4px}
-#match-phone .yt-frame iframe{height:334px;min-height:200px;width:100%;min-width:200px}
-.yt-position{font-size:9px;color:var(--handset-dim)}
-.yt-settings{align-items:center;flex-wrap:wrap}
-.yt-settings a{font-size:9px}
-.yt-library .yt-results{max-height:178px}
+.shorts-launcher{display:grid;gap:10px;padding:16px 5px;color:var(--handset-text)}
+.shorts-launcher-mark{width:40px;height:29px;display:grid;place-items:center;border-radius:6px;background:#ba2f49;color:#fff}
+.shorts-launcher-mark svg{width:16px;height:16px;fill:currentColor}
+.shorts-launcher h2{margin:0;font:750 20px/1.1 "DM Sans",sans-serif;letter-spacing:-.03em}
+.shorts-launcher p{margin:0;color:var(--handset-dim);font-size:11px;line-height:1.45}
+#match-phone .shorts-launcher-link{min-height:44px;display:grid;place-items:center;justify-self:start;
+  text-align:center;text-decoration:none;padding:7px 10px}
 .record-tabs{display:flex;justify-content:space-between;gap:3px;margin:1px 0 8px;border-bottom:1px solid var(--handset-border)}
 .record-control{min-height:28px;border-radius:4px;font-size:10px;font-weight:650;padding:3px 6px;color:var(--handset-dim)}
 .record-tabs button[aria-pressed=true]{color:var(--handset-text);outline:0;border-bottom:2px solid var(--phone-accent);border-radius:0}
@@ -293,8 +284,6 @@ dialog .result-details span{border-radius:4px}
 #match-phone .handset-app .handset-icon[data-glyph=musiclab]{background:#735aa6;color:#f3e4d1}
 #match-phone .handset-app:focus-visible .handset-icon{outline:2px solid #f7d392;outline-offset:2px}
 #match-phone .handset-content .handset-setting{min-height:36px}
-.yt-swipe{width:100%;padding:6px 3px;color:var(--handset-dim);font-size:10px;touch-action:none;border-bottom:1px solid var(--handset-border)}
-#match-phone .yt-poster{height:min(31vh,254px);border-radius:8px;border-top:3px solid #b72f4a}
 .screening-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
 .screening-video{width:100%;aspect-ratio:9/13;background:#0c0f19;object-fit:contain;max-height:350px;border-radius:5px}
 .screening-title{font:750 17px/1.1 "DM Sans",sans-serif;display:block;margin-block:8px 4px;color:var(--handset-text)}

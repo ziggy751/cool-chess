@@ -6,7 +6,7 @@ The phone saves its wallpaper, finish, brightness, app order and other preferenc
 
 | App | What you can do |
 | --- | --- |
-| YouTube Shorts | Browse the curated list or add a compatible public URL. Filter by category or title, bookmark videos, and see watch history. Full-catalog search opens on YouTube. Choose **Load YouTube player** for the provider’s controls and branding. |
+| YouTube Shorts | Choose **Open Shorts on YouTube** to open the official feed in a separate tab. Your browser handles playback and optional sign-in. |
 | AI Shorts | Browse pre-generated footage or screen batches of three original animated Brainrot memes. Use format filters, history, bookmarks, narration and effects controls. |
 | Arcade | Browse 23 entries, including Chess Puzzles, with screenshots captured from the games. Find titles or categories, see personal bests, and add favourites or phone Home shortcuts. |
 | Flappy Wings | Tap, click, or use Space to flap through the gates. Reach eight points to unlock the kingfisher skin. Pick from six environments. |
@@ -25,8 +25,8 @@ The phone saves its wallpaper, finish, brightness, app order and other preferenc
 
 The chess clock keeps running on your turn. The phone displays a turn notice, and its default settings pause current videos and games when the turn changes. Resume from the app’s controls. Competitive matches disable YouTube and Chess Puzzles and limit the native clip library to approved, non-instructional videos.
 
-YouTube is loaded only after a player requests it. The official privacy-enhanced player handles playback and any video restrictions. If a clip cannot play in the embed, **Open video on YouTube** takes you to the video. [YouTube IFrame Player API](https://developers.google.com/youtube/iframe_api_reference) · [Privacy-enhanced mode](https://support.google.com/youtube/answer/171780)
+Closing the in-game phone pauses its local video apps. To stop YouTube playback, pause or close the YouTube tab. [YouTube Shorts setup and testing](youtube-shorts.md)
 
 ## Browser captures
 
-[Current phone and previous release](screenshots/studio-update/phone-before-after.webp) · [Arcade playfields](screenshots/studio-update/arcade-playfields.webp) · [Touch layout](screenshots/studio-update/mobile.webp) · [Release report](entertainment-rebuild.md) · [Before and after](screenshots/entertainment/phone-before-after.webp)
+[Previous phone release](screenshots/studio-update/phone-before-after.webp) · [Arcade playfields](screenshots/studio-update/arcade-playfields.webp) · [Touch layout](screenshots/studio-update/mobile.webp) · [Release report](entertainment-rebuild.md) · [Before and after](screenshots/entertainment/phone-before-after.webp)
